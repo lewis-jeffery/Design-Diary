@@ -1,0 +1,82 @@
+{
+  "name": "design-diary",
+  "version": "1.0.0",
+  "description": "A modern, visual interface for creating and editing Jupyter notebooks with a canvas-based approach",
+  "keywords": ["jupyter", "notebook", "canvas", "visual", "editor", "python", "react", "typescript"],
+  "author": "Design Diary Contributors",
+  "license": "MIT",
+  "homepage": "https://github.com/your-username/design-diary#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-username/design-diary.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/design-diary/issues"
+  },
+  "private": false,
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@monaco-editor/react": "^4.7.0",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^13.5.0",
+    "@types/jest": "^27.5.2",
+    "@types/node": "^16.18.126",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@types/uuid": "^10.0.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-resizable-panels": "^3.0.3",
+    "react-scripts": "^5.0.1",
+    "styled-components": "^6.1.19",
+    "typescript": "^4.9.5",
+    "uuid": "^11.1.0",
+    "web-vitals": "^2.1.4",
+    "zustand": "^5.0.6"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject",
+    "dev": "./start-dev.sh",
+    "dev:frontend": "react-scripts start",
+    "dev:backend": "cd server && npm run dev",
+    "build:production": "NODE_ENV=production npm run build",
+    "serve": "npx serve -s build -l 3000",
+    "install:all": "npm install && cd server && npm install",
+    "clean": "rm -rf build node_modules server/node_modules",
+    "clean:install": "npm run clean && npm run install:all",
+    "lint": "eslint src --ext .ts,.tsx --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,css,md}\"",
+    "type-check": "tsc --noEmit",
+    "analyze": "npm run build && npx bundle-analyzer build/static/js/*.js",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up",
+    "docker:down": "docker-compose down",
+    "deploy:vercel": "vercel --prod",
+    "health-check": "curl -f http://localhost:3000 && curl -f http://localhost:3001/health"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}

@@ -1,0 +1,806 @@
+import { create } from 'zustand';
+import { v4 as uuidv4 } from 'uuid';
+import { AppState, Cell, Position, Size, DesignDiaryDocument, SavedFileInfo, PageSize } from '../types';
+import { pythonExecutionService } from '../services/pythonExecutionService';
+import { JupyterConversionService } from '../services/jupyterConversionService';
+import { JupyterNotebook, DesignDiaryLayout } from '../types/jupyter';
+
+// Standard page sizes in pixels (at 96 DPI)
+export const PAGE_SIZES: Record<string, PageSize> = {
+  A4: { width: 794, height: 1123, name: 'A4' },
+  A3: { width: 1123, height: 1587, name: 'A3' },
+  A5: { width: 559, height: 794, name: 'A5' },
+  Letter: { width: 816, height: 1056, name: 'Letter' },
+  Legal: { width: 816, height: 1344, name: 'Legal' },
+  Tabloid: { width: 1056, height: 1632, name: 'Tabloid' },
+};
+
+const createInitialDocument = (): DesignDiaryDocument => ({
+  version: '1.0.0',
+  id: uuidv4(),
+  name: 'Untitled Design Diary',
+  created: new Date().toISOString(),
+  modified: new Date().toISOString(),
+  canvas: {
+    zoom: 1.0,
+    pan: { x: 0, y: 0 },
+    gridSize: 20,
+    snapToGrid: true,
+    pageSize: PAGE_SIZES.A4,
+    orientation: 'landscape',
+    pages: 1,
+    pageMargin: 50,
+  },
+  cells: [],
+  executionHistory: [],
+});
+
+interface StoreActions {
+  // Document actions
+  createNewDocument: () => void;
+  loadDocument: (document: DesignDiaryDocument) => void;
+  saveDocument: () => string;
+  
+  // Save/Save As actions
+  saveAsJupyter: () => void; // Save As - prompts for filename and saves both files
+  saveJupyter: () => void;   // Save - silently overwrites existing files
+  setSavedFileInfo: (baseFileName: string, path: string) => void;
+  
+  // Jupyter compatibility actions
+  exportToJupyter: () => { notebook: string; layout: string };
+  importFromJupyter: (notebook: JupyterNotebook, layout: DesignDiaryLayout) => void;
+  
+  // Cell actions
+  addCell: (type: Cell['type'], position: Position, renderingHint?: string) => void;
+  updateCell: (cellId: string, updates: Partial<Cell>) => void;
+  deleteCell: (cellId: string) => void;
+  duplicateCell: (cellId: string) => void;
+  
+  // Position and size actions
+  updateCellPosition: (cellId: string, position: Position) => void;
+  updateCellSize: (cellId: string, size: Size) => void;
+  
+  // Selection actions
+  selectCell: (cellId: string, multiSelect?: boolean) => void;
+  clearSelection: () => void;
+  selectMultipleCells: (cellIds: string[]) => void;
+  
+  // Canvas actions
+  updateCanvasZoom: (zoom: number) => void;
+  updateCanvasPan: (pan: Position) => void;
+  toggleSnapToGrid: () => void;
+  updatePageSize: (pageSize: PageSize) => void;
+  updatePageOrientation: (orientation: 'portrait' | 'landscape') => void;
+  
+  // Execution actions
+  executeCell: (cellId: string) => Promise<void>;
+  executeCells: (cellIds: string[]) => void;
+  updateExecutionOrder: () => void;
+  
+  // Drag actions
+  startDrag: (cellId: string, offset: Position) => void;
+  updateDrag: (position: Position) => void;
+  endDrag: () => void;
+  
+  // Collapse actions
+  toggleCellCollapse: (cellId: string) => void;
+}
+
+export const useStore = create<AppState & StoreActions>((set, get) => ({
+  // Initial state
+  document: createInitialDocument(),
+  dragState: {
+    isDragging: false,
+    draggedCellId: null,
+    dragOffset: { x: 0, y: 0 },
+  },
+  selectionState: {
+    selectedCellIds: [],
+    selectionBox: null,
+  },
+  isExecuting: false,
+  executionQueue: [],
+  globalExecutionCount: 0,
+  savedFileInfo: {
+    baseFileName: null,
+    lastSavedPath: null,
+  },
+
+  // Document actions
+  createNewDocument: () => {
+    set({ document: createInitialDocument() });
+  },
+
+  loadDocument: (document: DesignDiaryDocument) => {
+    set({ document });
+  },
+
+  saveDocument: () => {
+    const { document } = get();
+    const updatedDocument = {
+      ...document,
+      modified: new Date().toISOString(),
+    };
+    set({ document: updatedDocument });
+    return JSON.stringify(updatedDocument, null, 2);
+  },
+
+  // Jupyter compatibility actions
+  exportToJupyter: () => {
+    const { document } = get();
+    const result = JupyterConversionService.toJupyterFormat(document);
+    return {
+      notebook: JSON.stringify(result.notebook, null, 2),
+      layout: JSON.stringify(result.layout, null, 2)
+    };
+  },
+
+  importFromJupyter: (notebook: JupyterNotebook, layout: DesignDiaryLayout) => {
+    const document = JupyterConversionService.fromJupyterFormat(notebook, layout);
+    set({ document });
+  },
+
+  // Save/Save As actions
+  setSavedFileInfo: (baseFileName: string, path: string) => {
+    set({
+      savedFileInfo: {
+        baseFileName,
+        lastSavedPath: path,
+      },
+    });
+  },
+
+  saveAsJupyter: () => {
+    const { document } = get();
+    
+    // Prompt user for filename
+    const userFileName = prompt('Enter filename (without extension):', 
+      document.name === 'Untitled Design Diary' ? 'my_design_diary' : document.name.replace(/\s+/g, '_')
+    );
+    
+    if (!userFileName) {
+      return; // User cancelled
+    }
+    
+    // Clean the filename
+    const cleanFileName = userFileName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    
+    // Update document name to match the filename
+    const updatedDocument = {
+      ...document,
+      name: cleanFileName.replace(/_/g, ' '),
+      modified: new Date().toISOString(),
+    };
+    set({ document: updatedDocument });
+    
+    const { notebook, layout } = get().exportToJupyter();
+    
+    // Download notebook file
+    const notebookBlob = new Blob([notebook], { type: 'application/json' });
+    const notebookUrl = URL.createObjectURL(notebookBlob);
+    const notebookLink = window.document.createElement('a');
+    notebookLink.href = notebookUrl;
+    notebookLink.download = `${cleanFileName}.ipynb`;
+    window.document.body.appendChild(notebookLink);
+    notebookLink.click();
+    window.document.body.removeChild(notebookLink);
+    URL.revokeObjectURL(notebookUrl);
+
+    // Save the file info for future quick saves
+    get().setSavedFileInfo(cleanFileName, '');
+
+    // Download layout file with small delay
+    setTimeout(() => {
+      const layoutBlob = new Blob([layout], { type: 'application/json' });
+      const layoutUrl = URL.createObjectURL(layoutBlob);
+      const layoutLink = window.document.createElement('a');
+      layoutLink.href = layoutUrl;
+      layoutLink.download = `${cleanFileName}.layout.json`;
+      window.document.body.appendChild(layoutLink);
+      layoutLink.click();
+      window.document.body.removeChild(layoutLink);
+      URL.revokeObjectURL(layoutUrl);
+    }, 100);
+  },
+
+  saveJupyter: () => {
+    const { savedFileInfo } = get();
+    
+    if (!savedFileInfo.baseFileName) {
+      // If no previous save, fall back to Save As
+      get().saveAsJupyter();
+      return;
+    }
+
+    const { notebook, layout } = get().exportToJupyter();
+    
+    // Use the previously saved filename
+    const baseFileName = savedFileInfo.baseFileName;
+    
+    // Create a more direct download that bypasses filename prompts
+    const downloadFile = (content: string, filename: string) => {
+      try {
+        const blob = new Blob([content], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        
+        // Create a temporary link element
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        
+        // Set additional attributes to ensure direct download
+        link.setAttribute('download', filename);
+        link.style.display = 'none';
+        link.style.visibility = 'hidden';
+        
+        // Add to DOM
+        document.body.appendChild(link);
+        
+        // Force click and immediate cleanup
+        link.click();
+        
+        // Clean up immediately
+        setTimeout(() => {
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        }, 100);
+        
+      } catch (error) {
+        console.error('Download failed:', error);
+      }
+    };
+
+    // Download both files with the saved filename
+    downloadFile(notebook, `${baseFileName}.ipynb`);
+    
+    // Download layout file with delay to prevent browser blocking
+    setTimeout(() => {
+      downloadFile(layout, `${baseFileName}.layout.json`);
+    }, 300);
+  },
+
+  // Cell actions
+  addCell: (type: Cell['type'], position: Position, renderingHint?: string) => {
+    const { document } = get();
+    const baseCell = {
+      id: uuidv4(),
+      position,
+      size: { width: 300, height: 200 },
+      executionOrder: document.cells.length + 1,
+      collapsed: false,
+      collapsedSize: { width: 300, height: 50 },
+      selected: false,
+      zIndex: document.cells.length,
+    };
+
+    let newCell: Cell;
+
+    // Type-specific cell creation aligned with JupyterLab
+    switch (type) {
+      case 'code':
+        newCell = {
+          ...baseCell,
+          type: 'code',
+          content: '# Enter your code here\nprint("Hello, World!")',
+          language: 'python',
+          firstCommentLines: ['# Enter your code here'],
+        };
+        break;
+      case 'markdown':
+        // Create markdown cell with rendering hints for specialized content
+        const contentType = renderingHint || 'text';
+        let content = 'Enter your text here...';
+        let hints: any = { contentType: 'text' };
+
+        switch (contentType) {
+          case 'text':
+            content = 'Enter your text here...';
+            hints = {
+              contentType: 'text',
+              fontSize: 14,
+              fontFamily: 'Arial, sans-serif'
+            };
+            break;
+          case 'equation':
+            content = '$$E = mc^2$$';
+            hints = {
+              contentType: 'equation',
+              latex: 'E = mc^2',
+              displayMode: true
+            };
+            break;
+          case 'image':
+            content = '![Image](image-placeholder)';
+            hints = {
+              contentType: 'image',
+              src: '',
+              alt: 'Image',
+              originalSize: { width: 300, height: 200 }
+            };
+            break;
+          case 'graph':
+            content = '<!-- Graph placeholder -->';
+            hints = {
+              contentType: 'graph',
+              chartType: 'line',
+              data: {},
+              config: {}
+            };
+            break;
+        }
+
+        newCell = {
+          ...baseCell,
+          type: 'markdown',
+          content,
+          renderingHints: hints
+        };
+        break;
+      case 'raw':
+        newCell = {
+          ...baseCell,
+          type: 'raw',
+          content: '',
+          format: 'text'
+        };
+        break;
+      default:
+        throw new Error(`Unknown cell type: ${type}`);
+    }
+
+    set({
+      document: {
+        ...document,
+        cells: [...document.cells, newCell],
+        modified: new Date().toISOString(),
+      },
+    });
+  },
+
+  updateCell: (cellId: string, updates: Partial<Cell>) => {
+    const { document } = get();
+    
+    try {
+      const newCells = document.cells.map(cell => {
+        if (cell.id === cellId) {
+          // Create a safe update that preserves the original cell structure
+          const updatedCell = {
+            ...cell,
+            ...updates,
+            // Ensure critical properties are preserved
+            id: cell.id,
+            type: cell.type,
+          } as Cell;
+          return updatedCell;
+        }
+        return cell;
+      });
+      
+      const newDocument = {
+        ...document,
+        cells: newCells,
+        modified: new Date().toISOString(),
+      };
+      
+      set({ document: newDocument });
+    } catch (error) {
+      console.error('Error updating cell:', error);
+      // Don't update if there's an error
+    }
+  },
+
+  deleteCell: (cellId: string) => {
+    const { document } = get();
+    set({
+      document: {
+        ...document,
+        cells: document.cells.filter(cell => cell.id !== cellId),
+        modified: new Date().toISOString(),
+      },
+    });
+  },
+
+  duplicateCell: (cellId: string) => {
+    const { document } = get();
+    const cellToDuplicate = document.cells.find(cell => cell.id === cellId);
+    if (cellToDuplicate) {
+      const duplicatedCell: Cell = {
+        ...cellToDuplicate,
+        id: uuidv4(),
+        position: {
+          x: cellToDuplicate.position.x + 20,
+          y: cellToDuplicate.position.y + 20,
+        },
+        executionOrder: document.cells.length + 1,
+        selected: false,
+      };
+
+      set({
+        document: {
+          ...document,
+          cells: [...document.cells, duplicatedCell],
+          modified: new Date().toISOString(),
+        },
+      });
+    }
+  },
+
+  // Position and size actions
+  updateCellPosition: (cellId: string, position: Position) => {
+    try {
+      // Validate position values
+      if (typeof position.x !== 'number' || typeof position.y !== 'number' || 
+          isNaN(position.x) || isNaN(position.y)) {
+        console.warn('Invalid position values:', position);
+        return;
+      }
+      
+      // Ensure non-negative positions
+      const safePosition = {
+        x: Math.max(0, position.x),
+        y: Math.max(0, position.y)
+      };
+      
+      get().updateCell(cellId, { position: safePosition });
+    } catch (error) {
+      console.error('Error updating cell position:', error);
+    }
+  },
+
+  updateCellSize: (cellId: string, size: Size) => {
+    try {
+      // Validate size values
+      if (typeof size.width !== 'number' || typeof size.height !== 'number' || 
+          isNaN(size.width) || isNaN(size.height)) {
+        console.warn('Invalid size values:', size);
+        return;
+      }
+      
+      // Ensure minimum size
+      const safeSize = {
+        width: Math.max(100, size.width),
+        height: Math.max(50, size.height)
+      };
+      
+      get().updateCell(cellId, { size: safeSize });
+    } catch (error) {
+      console.error('Error updating cell size:', error);
+    }
+  },
+
+  // Selection actions
+  selectCell: (cellId: string, multiSelect = false) => {
+    const { selectionState } = get();
+    let newSelectedIds: string[];
+
+    if (multiSelect) {
+      newSelectedIds = selectionState.selectedCellIds.includes(cellId)
+        ? selectionState.selectedCellIds.filter(id => id !== cellId)
+        : [...selectionState.selectedCellIds, cellId];
+    } else {
+      newSelectedIds = [cellId];
+    }
+
+    set({
+      selectionState: {
+        ...selectionState,
+        selectedCellIds: newSelectedIds,
+      },
+    });
+
+    // Update cell selection state
+    const { document } = get();
+    set({
+      document: {
+        ...document,
+        cells: document.cells.map(cell => ({
+          ...cell,
+          selected: newSelectedIds.includes(cell.id),
+        })),
+      },
+    });
+  },
+
+  clearSelection: () => {
+    const { document } = get();
+    set({
+      selectionState: {
+        selectedCellIds: [],
+        selectionBox: null,
+      },
+      document: {
+        ...document,
+        cells: document.cells.map(cell => ({ ...cell, selected: false })),
+      },
+    });
+  },
+
+  selectMultipleCells: (cellIds: string[]) => {
+    const { document } = get();
+    set({
+      selectionState: {
+        selectedCellIds: cellIds,
+        selectionBox: null,
+      },
+      document: {
+        ...document,
+        cells: document.cells.map(cell => ({
+          ...cell,
+          selected: cellIds.includes(cell.id),
+        })),
+      },
+    });
+  },
+
+  // Canvas actions
+  updateCanvasZoom: (zoom: number) => {
+    const { document } = get();
+    set({
+      document: {
+        ...document,
+        canvas: { ...document.canvas, zoom },
+      },
+    });
+  },
+
+  updateCanvasPan: (pan: Position) => {
+    const { document } = get();
+    set({
+      document: {
+        ...document,
+        canvas: { ...document.canvas, pan },
+      },
+    });
+  },
+
+  toggleSnapToGrid: () => {
+    const { document } = get();
+    set({
+      document: {
+        ...document,
+        canvas: {
+          ...document.canvas,
+          snapToGrid: !document.canvas.snapToGrid,
+        },
+      },
+    });
+  },
+
+  updatePageSize: (pageSize: PageSize) => {
+    const { document } = get();
+    set({
+      document: {
+        ...document,
+        canvas: {
+          ...document.canvas,
+          pageSize,
+        },
+        modified: new Date().toISOString(),
+      },
+    });
+  },
+
+  updatePageOrientation: (orientation: 'portrait' | 'landscape') => {
+    const { document } = get();
+    set({
+      document: {
+        ...document,
+        canvas: {
+          ...document.canvas,
+          orientation,
+        },
+        modified: new Date().toISOString(),
+      },
+    });
+  },
+
+  // Execution actions
+  executeCell: async (cellId: string) => {
+    const { document, globalExecutionCount } = get();
+    const cell = document.cells.find(c => c.id === cellId);
+    
+    if (!cell || cell.type !== 'code') {
+      console.warn(`Cell ${cellId} not found or not a code cell`);
+      return;
+    }
+
+    // Set execution state and increment global execution count
+    const newExecutionCount = globalExecutionCount + 1;
+    set({ isExecuting: true, globalExecutionCount: newExecutionCount });
+
+    try {
+      const result = await pythonExecutionService.executeCode(cell.content, cellId, document.id);
+      
+      // Determine output content
+      const outputContent = result.success 
+        ? (result.stdout || 'Execution completed successfully')
+        : (result.stderr || 'Execution failed');
+
+      // Update the code cell with execution count
+      get().updateCell(cellId, {
+        executionCount: newExecutionCount,
+      });
+
+      // Process rich outputs
+      const richOutputs = result.outputs?.map((output: any) => ({
+        format: (output.type === 'image' ? 'image' : 'text') as 'image' | 'text',
+        data: output.type === 'image' ? `http://localhost:3001/api/outputs/${output.data}` : output.data,
+        metadata: output.metadata || {}
+      })) || [];
+
+      // Find existing output cell for this code cell
+      const currentDocument = get().document;
+      const existingOutputCell = currentDocument.cells.find(c => 
+        c.type === 'raw' && (c as any).sourceCodeCellId === cellId
+      );
+
+      if (existingOutputCell) {
+        // Update existing output cell
+        get().updateCell(existingOutputCell.id, {
+          content: outputContent,
+        });
+      } else {
+        // Create a new output cell positioned to the right of the code cell
+        const outputCellId = uuidv4();
+        const outputCell: Cell = {
+          id: outputCellId,
+          type: 'raw',
+          position: {
+            x: cell.position.x + cell.size.width + 20, // Position to the right with some spacing
+            y: cell.position.y, // Same vertical position
+          },
+          size: { width: 350, height: 200 },
+          executionOrder: currentDocument.cells.length + 1,
+          collapsed: false,
+          collapsedSize: { width: 350, height: 50 },
+          selected: false,
+          zIndex: currentDocument.cells.length,
+          content: outputContent,
+          format: 'text',
+        };
+
+        // Add the output cell to the document
+        const updatedDocument = get().document;
+        set({
+          document: {
+            ...updatedDocument,
+            cells: [...updatedDocument.cells, outputCell],
+            modified: new Date().toISOString(),
+          },
+        });
+      }
+
+      // Update execution history
+      const finalDocument = get().document;
+      set({
+        document: {
+          ...finalDocument,
+          executionHistory: [...finalDocument.executionHistory, Date.now()],
+        },
+      });
+
+    } catch (error) {
+      console.error('❌ Execution error:', error);
+      // Handle execution error
+      const errorMessage = error instanceof Error ? error.message : 'Unknown execution error';
+      
+      // Update the code cell with execution count even on error
+      get().updateCell(cellId, {
+        executionCount: newExecutionCount,
+      });
+      
+      // Find existing output cell for this code cell
+      const currentDocument = get().document;
+      const existingOutputCell = currentDocument.cells.find(c => 
+        c.type === 'raw' && (c as any).sourceCodeCellId === cellId
+      );
+
+      if (existingOutputCell) {
+        // Update existing output cell with error
+        get().updateCell(existingOutputCell.id, {
+          content: `Error: ${errorMessage}`,
+        });
+      } else {
+        // Create a new error output cell
+        const outputCellId = uuidv4();
+        const errorOutputCell: Cell = {
+          id: outputCellId,
+          type: 'raw',
+          position: {
+            x: cell.position.x + cell.size.width + 20,
+            y: cell.position.y,
+          },
+          size: { width: 350, height: 200 },
+          executionOrder: currentDocument.cells.length + 1,
+          collapsed: false,
+          collapsedSize: { width: 350, height: 50 },
+          selected: false,
+          zIndex: currentDocument.cells.length,
+          content: `Error: ${errorMessage}`,
+          format: 'text',
+        };
+
+        const updatedDocument = get().document;
+        set({
+          document: {
+            ...updatedDocument,
+            cells: [...updatedDocument.cells, errorOutputCell],
+            modified: new Date().toISOString(),
+          },
+        });
+      }
+    } finally {
+      set({ isExecuting: false });
+    }
+  },
+
+  executeCells: (cellIds: string[]) => {
+    cellIds.forEach(cellId => get().executeCell(cellId));
+  },
+
+  updateExecutionOrder: () => {
+    const { document } = get();
+    // Sort cells by position (left to right, top to bottom)
+    const sortedCells = [...document.cells].sort((a, b) => {
+      if (Math.abs(a.position.y - b.position.y) < 50) {
+        return a.position.x - b.position.x; // Same row, sort by x
+      }
+      return a.position.y - b.position.y; // Different rows, sort by y
+    });
+
+    const updatedCells = sortedCells.map((cell, index) => ({
+      ...cell,
+      executionOrder: index + 1,
+    }));
+
+    set({
+      document: {
+        ...document,
+        cells: updatedCells,
+        modified: new Date().toISOString(),
+      },
+    });
+  },
+
+  // Drag actions
+  startDrag: (cellId: string, offset: Position) => {
+    set({
+      dragState: {
+        isDragging: true,
+        draggedCellId: cellId,
+        dragOffset: offset,
+      },
+    });
+  },
+
+  updateDrag: (position: Position) => {
+    const { dragState } = get();
+    if (dragState.isDragging && dragState.draggedCellId) {
+      const newPosition = {
+        x: position.x - dragState.dragOffset.x,
+        y: position.y - dragState.dragOffset.y,
+      };
+      get().updateCellPosition(dragState.draggedCellId, newPosition);
+    }
+  },
+
+  endDrag: () => {
+    set({
+      dragState: {
+        isDragging: false,
+        draggedCellId: null,
+        dragOffset: { x: 0, y: 0 },
+      },
+    });
+    get().updateExecutionOrder();
+  },
+
+  // Collapse actions
+  toggleCellCollapse: (cellId: string) => {
+    const { document } = get();
+    const cell = document.cells.find(c => c.id === cellId);
+    if (cell) {
+      get().updateCell(cellId, { collapsed: !cell.collapsed });
+    }
+  },
+}));

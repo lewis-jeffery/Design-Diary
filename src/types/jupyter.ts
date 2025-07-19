@@ -42,7 +42,7 @@ export interface JupyterCellMetadata {
   design_diary?: {
     cell_id: string;
     original_type: string; // Maps to our CellType
-    execution_order: number;
+    execution_order: number | null; // null for cells that haven't been executed yet
     source_code_cell_id?: string; // For output cells
   };
 }

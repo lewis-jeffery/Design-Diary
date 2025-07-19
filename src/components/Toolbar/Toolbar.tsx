@@ -1,6 +1,7 @@
 import React, { useCallback } from 'react';
 import styled from 'styled-components';
 import { useStore, PAGE_SIZES } from '../../store/useStore';
+import { LayoutOptimizationService } from '../../services/layoutOptimizationService';
 
 const ToolbarContainer = styled.div`
   position: fixed;
@@ -170,86 +171,184 @@ const Toolbar: React.FC = () => {
   }, [exportToJupyter, designDocument.name]);
 
   const handleImportFromJupyter = useCallback(() => {
+    console.log('Import button clicked - creating file input');
+    
     const input = window.document.createElement('input');
     input.type = 'file';
     input.accept = '.ipynb,.json';
     input.multiple = true;
     
     input.onchange = (event) => {
+      console.log('File input changed');
       const files = (event.target as HTMLInputElement).files;
-      if (!files || files.length === 0) return;
+      console.log('Selected files:', files);
+      
+      if (!files || files.length === 0) {
+        console.log('No files selected');
+        return;
+      }
 
       let notebookFile: File | null = null;
       let layoutFile: File | null = null;
 
       // Identify notebook and layout files
       Array.from(files).forEach(file => {
+        console.log('Processing file:', file.name);
         if (file.name.endsWith('.ipynb')) {
           notebookFile = file;
+          console.log('Found notebook file:', file.name);
         } else if (file.name.includes('.layout.json')) {
           layoutFile = file;
+          console.log('Found layout file:', file.name);
         }
       });
 
       if (!notebookFile) {
+        console.error('No .ipynb file found');
         alert('Please select a .ipynb file');
         return;
       }
 
+      // TypeScript assertion: we know notebookFile is not null here
+      const selectedNotebookFile = notebookFile as File;
+      console.log('Reading notebook file:', selectedNotebookFile.name);
       const notebookReader = new FileReader();
+      
+      notebookReader.onerror = (error) => {
+        console.error('Error reading notebook file:', error);
+        alert('Error reading notebook file');
+      };
+      
       notebookReader.onload = (e) => {
         try {
-          const notebook = JSON.parse(e.target?.result as string);
+          console.log('Notebook file loaded, parsing JSON...');
+          const notebookContent = e.target?.result as string;
+          console.log('Notebook content length:', notebookContent.length);
+          
+          const notebook = JSON.parse(notebookContent);
+          console.log('Notebook parsed successfully:', notebook);
+          
+          // Validate notebook structure
+          if (!notebook.cells || !Array.isArray(notebook.cells)) {
+            throw new Error('Invalid notebook format: missing or invalid cells array');
+          }
           
           if (layoutFile) {
+            console.log('Reading layout file:', layoutFile.name);
             // Read layout file if provided
             const layoutReader = new FileReader();
+            
+            layoutReader.onerror = (error) => {
+              console.error('Error reading layout file:', error);
+              alert('Error reading layout file');
+            };
+            
             layoutReader.onload = (e) => {
               try {
-                const layout = JSON.parse(e.target?.result as string);
+                console.log('Layout file loaded, parsing JSON...');
+                const layoutContent = e.target?.result as string;
+                const layout = JSON.parse(layoutContent);
+                console.log('Layout parsed successfully:', layout);
+                
+                console.log('Calling importFromJupyter with notebook and layout...');
                 importFromJupyter(notebook, layout);
+                console.log('Import completed successfully');
               } catch (error) {
                 console.error('Error parsing layout file:', error);
-                alert('Error parsing layout file');
+                alert(`Error parsing layout file: ${error instanceof Error ? error.message : 'Unknown error'}`);
               }
             };
             layoutReader.readAsText(layoutFile);
           } else {
+            console.log('No layout file provided, creating default layout...');
             // Create default layout if no layout file provided
             const defaultLayout: any = {
               version: '1.0.0',
-              notebook_id: notebook.metadata?.design_diary?.id || 'imported-notebook',
+              notebook_id: notebook.metadata?.design_diary?.id || `imported-notebook-${Date.now()}`,
               canvas: {
                 zoom: 1.0,
                 pan: { x: 0, y: 0 },
                 gridSize: 20,
                 snapToGrid: true,
+                pageSize: { width: 794, height: 1123, name: 'A4' },
+                orientation: 'landscape',
+                pages: 1,
+                pageMargin: 50,
               },
               cells: {},
               execution_history: []
             };
             
-            // Generate default positions for cells
+            // Generate optimized layout for cells
+            console.log('Generating optimized layout for', notebook.cells.length, 'cells');
+            
+            const layoutConstraints = {
+              pageWidth: defaultLayout.canvas.pageSize.width,
+              pageHeight: defaultLayout.canvas.pageSize.height,
+              margin: defaultLayout.canvas.pageMargin,
+              cellSpacing: 20,
+              maxPages: 10 // Allow up to 10 pages for large notebooks
+            };
+            
+            console.log('Layout constraints:', layoutConstraints);
+            
+            // Use the optimization service to generate intelligent layout
+            const optimizedCellLayouts = LayoutOptimizationService.generateOptimizedLayout(
+              notebook.cells,
+              layoutConstraints
+            );
+            
+            // Update cell IDs to match notebook cells
             notebook.cells.forEach((cell: any, index: number) => {
-              const cellId = cell.id || `cell-${index}`;
-              defaultLayout.cells[cellId] = {
-                position: { x: 100, y: 100 + index * 250 },
-                size: { width: 400, height: 200 },
-                collapsed_size: { width: 400, height: 50 },
-                z_index: index
-              };
+              const cellId = cell.id || `cell-${index}-${Date.now()}`;
+              const optimizedLayout = optimizedCellLayouts[cell.id || `cell-${index}`];
+              
+              if (optimizedLayout) {
+                defaultLayout.cells[cellId] = {
+                  ...optimizedLayout,
+                  cell_type: cell.cell_type,
+                  rendering_hints: {}
+                };
+              } else {
+                // Fallback for any cells not handled by optimization
+                defaultLayout.cells[cellId] = {
+                  position: { x: 100, y: 100 + index * 250 },
+                  size: { width: 400, height: 200 },
+                  collapsed_size: { width: 400, height: 50 },
+                  z_index: index,
+                  cell_type: cell.cell_type,
+                  rendering_hints: {}
+                };
+              }
+              
+              console.log(`Generated layout for cell ${cellId}:`, defaultLayout.cells[cellId]);
             });
             
+            // Calculate and set the number of pages needed
+            const pagesNeeded = Math.max(1, Math.ceil(
+              Object.values(defaultLayout.cells).reduce((maxY: number, cell: any) => 
+                Math.max(maxY, cell.position.y + cell.size.height), 0
+              ) / defaultLayout.canvas.pageSize.height
+            ));
+            
+            defaultLayout.canvas.pages = pagesNeeded;
+            console.log(`Optimized layout created with ${pagesNeeded} pages for ${notebook.cells.length} cells`);
+            
+            console.log('Default layout created:', defaultLayout);
+            console.log('Calling importFromJupyter with notebook and default layout...');
             importFromJupyter(notebook, defaultLayout);
+            console.log('Import completed successfully');
           }
         } catch (error) {
           console.error('Error parsing notebook file:', error);
-          alert('Error parsing notebook file');
+          alert(`Error parsing notebook file: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
       };
-      notebookReader.readAsText(notebookFile);
+      
+      notebookReader.readAsText(selectedNotebookFile);
     };
     
+    console.log('Triggering file input click...');
     input.click();
   }, [importFromJupyter]);
 

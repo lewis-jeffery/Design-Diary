@@ -137,11 +137,11 @@ const CellComponent: React.FC<CellComponentProps> = ({ cell }) => {
       if (!isDraggingRef.current) return;
       
       try {
-        const canvasContainer = document.querySelector('.canvas-container');
-        const canvasContent = document.querySelector('.canvas-content');
+        // Use a simpler, more reliable approach for drag positioning
+        const canvasContainer = document.querySelector('.canvas-container') as HTMLElement;
         
-        if (!canvasContainer || !canvasContent) {
-          // Fallback to simple positioning if canvas elements not found
+        if (!canvasContainer) {
+          // Fallback to simple positioning if canvas container not found
           updateCellPosition(cell.id, { 
             x: Math.max(0, e.clientX - 10), 
             y: Math.max(0, e.clientY - 10) 
@@ -151,51 +151,77 @@ const CellComponent: React.FC<CellComponentProps> = ({ cell }) => {
         
         const canvasRect = canvasContainer.getBoundingClientRect();
         
-        // Get canvas transform values safely with better error handling
+        // Get canvas transform values safely
         let zoom = 1;
         let panX = 0;
         let panY = 0;
         
         try {
-          const computedStyle = window.getComputedStyle(canvasContent);
-          const transform = computedStyle.transform;
-          
-          if (transform && transform !== 'none' && transform !== 'matrix(1, 0, 0, 1, 0, 0)') {
-            const matrixMatch = transform.match(/matrix\(([^)]+)\)/);
-            if (matrixMatch && matrixMatch[1]) {
-              const values = matrixMatch[1].split(',').map(v => {
-                const parsed = parseFloat(v.trim());
-                return isNaN(parsed) ? 0 : parsed;
-              });
+          // Try to get zoom and pan from the store instead of parsing CSS transforms
+          const canvasContent = document.querySelector('.canvas-content') as HTMLElement;
+          if (canvasContent) {
+            const computedStyle = window.getComputedStyle(canvasContent);
+            const transform = computedStyle.transform;
+            
+            if (transform && transform !== 'none') {
+              // More robust transform parsing
+              const matrixRegex = /matrix\(([^)]+)\)/;
+              const matrixMatch = transform.match(matrixRegex);
               
-              if (values.length >= 6) {
-                zoom = values[0] > 0 ? values[0] : 1; // Ensure positive zoom
-                panX = values[4] || 0;
-                panY = values[5] || 0;
+              if (matrixMatch && matrixMatch[1]) {
+                const values = matrixMatch[1].split(',').map(v => {
+                  const trimmed = v.trim();
+                  const parsed = parseFloat(trimmed);
+                  return !isNaN(parsed) && isFinite(parsed) ? parsed : 0;
+                });
+                
+                if (values.length >= 6) {
+                  const scaleX = values[0];
+                  const translateX = values[4];
+                  const translateY = values[5];
+                  
+                  // Validate values before using them
+                  if (scaleX > 0 && scaleX <= 10) { // Reasonable zoom range
+                    zoom = scaleX;
+                  }
+                  if (isFinite(translateX) && Math.abs(translateX) < 10000) { // Reasonable pan range
+                    panX = translateX;
+                  }
+                  if (isFinite(translateY) && Math.abs(translateY) < 10000) { // Reasonable pan range
+                    panY = translateY;
+                  }
+                }
               }
             }
           }
         } catch (transformError) {
           console.warn('Transform parsing failed, using defaults:', transformError);
-          // Continue with default values
+          // Continue with default values (zoom=1, pan=0)
         }
         
-        // Calculate position accounting for zoom and pan
+        // Calculate position accounting for zoom and pan with bounds checking
         const rawX = e.clientX - canvasRect.left - panX;
         const rawY = e.clientY - canvasRect.top - panY;
         
-        const x = rawX / zoom;
-        const y = rawY / zoom;
+        // Ensure zoom is valid before division
+        const safeZoom = zoom > 0 ? zoom : 1;
+        const x = rawX / safeZoom;
+        const y = rawY / safeZoom;
         
-        // Update position through store (subtract drag handle offset)
-        updateCellPosition(cell.id, { 
-          x: Math.max(0, x - 10), // Center drag handle, ensure non-negative
-          y: Math.max(0, y - 10) 
-        });
+        // Update position through store with bounds checking
+        const newX = Math.max(0, Math.min(10000, x - 10)); // Reasonable bounds
+        const newY = Math.max(0, Math.min(10000, y - 10)); // Reasonable bounds
+        
+        updateCellPosition(cell.id, { x: newX, y: newY });
+        
       } catch (error) {
         console.error('Error in drag handling:', error);
         // Prevent further errors by stopping drag
         isDraggingRef.current = false;
+        
+        // Clean up event listeners on error
+        document.removeEventListener('mousemove', handleGlobalMouseMove);
+        document.removeEventListener('mouseup', handleGlobalMouseUp);
       }
     };
     

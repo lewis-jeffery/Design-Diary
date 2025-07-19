@@ -17,14 +17,14 @@ const CanvasContainer = styled.div`
   }
 `;
 
-const CanvasContent = styled.div<{ $zoom: number; $panX: number; $panY: number }>`
+const CanvasContent = styled.div<{ $zoom: number; $panX: number; $panY: number; $contentHeight: number }>`
   position: absolute;
   transform: scale(${props => props.$zoom}) translate(${props => props.$panX}px, ${props => props.$panY}px);
   transform-origin: 0 0;
   width: 100%;
   height: 100%;
   min-width: 2000px;
-  min-height: 2000px;
+  min-height: ${props => Math.max(2000, props.$contentHeight)}px;
 `;
 
 const PageContainer = styled.div<{ 
@@ -39,9 +39,10 @@ const PageContainer = styled.div<{
   width: ${props => props.$pageWidth}px;
   height: ${props => props.$pageHeight}px;
   background: white;
-  border: 1px solid #dee2e6;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border: 2px solid #dee2e6;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   border-radius: 4px;
+  z-index: 1;
 `;
 
 const PageHeader = styled.div`
@@ -109,9 +110,6 @@ const Canvas: React.FC = () => {
     updateCanvasPan,
     updateCanvasZoom,
     clearSelection,
-    selectMultipleCells,
-    updateDrag,
-    endDrag,
   } = useStore();
 
   const { canvas, cells } = document;
@@ -134,7 +132,8 @@ const Canvas: React.FC = () => {
 
   // Calculate required number of pages based on cell positions
   const calculateRequiredPages = useCallback(() => {
-    if (cells.length === 0) return 1;
+    // Always show at least 3 pages for better visibility
+    if (cells.length === 0) return 3;
     
     const pageDimensions = getPageDimensions();
     const pageHeight = pageDimensions.height;
@@ -146,26 +145,44 @@ const Canvas: React.FC = () => {
       maxY = Math.max(maxY, cellBottom);
     });
     
-    // Calculate which page this maxY falls on
-    const requiredPages = Math.max(1, Math.ceil((maxY + 100) / (pageHeight + pageMargin)));
-    return requiredPages;
+    // Calculate which page this maxY falls on, with minimum of 3 pages
+    const calculatedPages = Math.ceil((maxY + 200) / (pageHeight + pageMargin));
+    return Math.max(3, calculatedPages);
   }, [cells, getPageDimensions, canvas.pageMargin]);
 
   const pageDimensions = getPageDimensions();
   const requiredPages = calculateRequiredPages();
+  
+  // Calculate total content height needed for all pages
+  const totalContentHeight = 100 + requiredPages * (pageDimensions.height + canvas.pageMargin);
 
-  // Handle mouse wheel for zooming
+  // Handle mouse wheel for zooming and panning
   const handleWheel = useCallback((e: WheelEvent) => {
+    e.preventDefault();
+    
     if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
+      // Zoom with Ctrl/Cmd + wheel
       const delta = e.deltaY > 0 ? 0.9 : 1.1;
       const newZoom = Math.max(0.1, Math.min(3, canvas.zoom * delta));
       updateCanvasZoom(newZoom);
+    } else {
+      // Pan with regular wheel
+      const panSpeed = 50;
+      const deltaX = e.shiftKey ? e.deltaY : e.deltaX; // Horizontal scroll with Shift
+      const deltaY = e.shiftKey ? 0 : e.deltaY; // Vertical scroll normally
+      
+      updateCanvasPan({
+        x: canvas.pan.x - deltaX * panSpeed / canvas.zoom,
+        y: canvas.pan.y - deltaY * panSpeed / canvas.zoom,
+      });
     }
-  }, [canvas.zoom, updateCanvasZoom]);
+  }, [canvas.zoom, canvas.pan, updateCanvasZoom, updateCanvasPan]);
 
   // Handle mouse down for panning and selection
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    // Only handle if clicking directly on the canvas (not on a cell)
+    if (e.target !== e.currentTarget) return;
+    
     if (e.button === 0) { // Left mouse button
       const rect = canvasRef.current?.getBoundingClientRect();
       if (!rect) return;
@@ -181,36 +198,49 @@ const Canvas: React.FC = () => {
         // Start panning
         isPanningRef.current = true;
         lastPanPositionRef.current = { x: e.clientX, y: e.clientY };
+        e.preventDefault(); // Prevent default to ensure consistent behavior
       }
     }
   }, [canvas.pan, canvas.zoom]);
 
-  // Handle mouse move for panning, selection, and dragging
+  // Handle mouse move for panning and selection (cell dragging is handled by CellComponent)
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
+    try {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
 
-    if (dragState.isDragging) {
-      // Handle cell dragging
-      const clientX = (e.clientX - rect.left - canvas.pan.x) / canvas.zoom;
-      const clientY = (e.clientY - rect.top - canvas.pan.y) / canvas.zoom;
-      updateDrag({ x: clientX, y: clientY });
-    } else if (isPanningRef.current) {
-      // Handle canvas panning
-      const deltaX = e.clientX - lastPanPositionRef.current.x;
-      const deltaY = e.clientY - lastPanPositionRef.current.y;
+      // Skip canvas operations if a cell is being dragged
+      if (dragState.isDragging) {
+        return; // Let CellComponent handle its own dragging
+      }
       
-      updateCanvasPan({
-        x: canvas.pan.x + deltaX,
-        y: canvas.pan.y + deltaY,
-      });
-      
-      lastPanPositionRef.current = { x: e.clientX, y: e.clientY };
-    } else if (isSelectingRef.current) {
-      // Handle selection box (this would update selection state)
-      // Implementation for selection box drawing would go here
+      if (isPanningRef.current) {
+        // Handle canvas panning
+        const deltaX = e.clientX - lastPanPositionRef.current.x;
+        const deltaY = e.clientY - lastPanPositionRef.current.y;
+        
+        // Validate deltas
+        if (typeof deltaX === 'number' && typeof deltaY === 'number' && 
+            !isNaN(deltaX) && !isNaN(deltaY) && 
+            isFinite(deltaX) && isFinite(deltaY)) {
+          updateCanvasPan({
+            x: canvas.pan.x + deltaX,
+            y: canvas.pan.y + deltaY,
+          });
+          
+          lastPanPositionRef.current = { x: e.clientX, y: e.clientY };
+        }
+      } else if (isSelectingRef.current) {
+        // Handle selection box (this would update selection state)
+        // Implementation for selection box drawing would go here
+      }
+    } catch (error) {
+      console.error('Error in canvas mouse move:', error);
+      // Reset states on error to prevent stuck states
+      isPanningRef.current = false;
+      isSelectingRef.current = false;
     }
-  }, [canvas.pan, canvas.zoom, dragState.isDragging, updateCanvasPan, updateDrag]);
+  }, [canvas.pan, canvas.zoom, dragState.isDragging, updateCanvasPan]);
 
   // Handle mouse up
   const handleMouseUp = useCallback((e: React.MouseEvent) => {
@@ -223,10 +253,8 @@ const Canvas: React.FC = () => {
       // Complete selection logic would go here
     }
     
-    if (dragState.isDragging) {
-      endDrag();
-    }
-  }, [dragState.isDragging, endDrag]);
+    // Cell drag ending is handled by CellComponent's global mouse up listener
+  }, []);
 
   // Handle canvas click (clear selection if clicking on empty space)
   const handleCanvasClick = useCallback((e: React.MouseEvent) => {
@@ -270,7 +298,13 @@ const Canvas: React.FC = () => {
         $zoom={canvas.zoom}
         $panX={canvas.pan.x}
         $panY={canvas.pan.y}
+        $contentHeight={totalContentHeight}
       >
+        {/* Global grid background */}
+        {canvas.snapToGrid && (
+          <Grid $gridSize={canvas.gridSize} $zoom={canvas.zoom} />
+        )}
+        
         {/* Render pages */}
         {Array.from({ length: requiredPages }, (_, index) => (
           <PageContainer
@@ -283,9 +317,6 @@ const Canvas: React.FC = () => {
             <PageHeader>
               Page {index + 1} - {canvas.pageSize.name} {canvas.orientation}
             </PageHeader>
-            {canvas.snapToGrid && (
-              <Grid $gridSize={canvas.gridSize} $zoom={canvas.zoom} />
-            )}
           </PageContainer>
         ))}
         
@@ -293,13 +324,15 @@ const Canvas: React.FC = () => {
         {cells.map((cell) => (
           <React.Fragment key={cell.id}>
             <CellComponent cell={cell} />
-            {/* Execution order indicator */}
-            <ExecutionOrderIndicator
-              $position={cell.position}
-              $order={cell.executionOrder}
-            >
-              {cell.executionOrder}
-            </ExecutionOrderIndicator>
+            {/* Execution order indicator - only show if cell has been executed */}
+            {cell.executionOrder !== null && (
+              <ExecutionOrderIndicator
+                $position={cell.position}
+                $order={cell.executionOrder}
+              >
+                {cell.executionOrder}
+              </ExecutionOrderIndicator>
+            )}
           </React.Fragment>
         ))}
         

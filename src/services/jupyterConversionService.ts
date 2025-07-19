@@ -69,8 +69,13 @@ export class JupyterConversionService {
     };
 
     // Convert each Design Diary cell to Jupyter format
-    // Sort by execution order for logical flow in Jupyter
-    const sortedCells = [...document.cells].sort((a, b) => a.executionOrder - b.executionOrder);
+    // Sort by execution order for logical flow in Jupyter (null values go to end)
+    const sortedCells = [...document.cells].sort((a, b) => {
+      if (a.executionOrder === null && b.executionOrder === null) return 0;
+      if (a.executionOrder === null) return 1;
+      if (b.executionOrder === null) return -1;
+      return a.executionOrder - b.executionOrder;
+    });
 
     for (const cell of sortedCells) {
       const jupyterCell = this.convertCellToJupyter(cell);
@@ -214,30 +219,17 @@ export class JupyterConversionService {
     const baseCell = {
       id: cellId,
       position: layout.position || { x: 0, y: 0 },
-      size: layout.size || { width: 300, height: 100 },
+      size: layout.size || { width: 400, height: 200 },
       executionOrder,
       collapsed: jupyterCell.metadata.collapsed || false,
-      collapsedSize: layout.collapsed_size || { width: 300, height: 30 },
+      collapsedSize: layout.collapsed_size || { width: 400, height: 50 },
       selected: false,
       zIndex: layout.z_index || 1
     };
 
-    const content = Array.isArray(jupyterCell.source) ? jupyterCell.source.join('\n') : jupyterCell.source;
-
-    // If we have original type info, reconstruct the original cell type
-    if (originalType && originalType !== 'code' && originalType !== 'markdown' && originalType !== 'raw') {
-      // For now, return as markdown cell with a note about the original type
-      return {
-        ...baseCell,
-        type: 'markdown',
-        content: `[${originalType.toUpperCase()} CELL]\n${content}`,
-        renderingHints: {
-          contentType: 'text' as const,
-          fontSize: 14,
-          fontFamily: 'Arial, sans-serif'
-        }
-      };
-    }
+    const content = Array.isArray(jupyterCell.source) ? 
+      jupyterCell.source.join('').replace(/\n$/, '') : // Remove trailing newline if present
+      (jupyterCell.source || '');
 
     // Handle standard Jupyter cell types
     if (jupyterCell.cell_type === 'code') {
@@ -253,14 +245,67 @@ export class JupyterConversionService {
     }
 
     if (jupyterCell.cell_type === 'markdown') {
+      // Try to detect if this was originally a specialized cell type
+      const renderingHints = layout.rendering_hints || {};
+      
+      // Check for equation patterns
+      if (content.match(/^\$\$.*\$\$$/) || content.match(/^\$.*\$$/)) {
+        const latex = content.replace(/^\$\$?|\$\$?$/g, '');
+        const displayMode = content.startsWith('$$');
+        return {
+          ...baseCell,
+          type: 'markdown',
+          content: latex,
+          renderingHints: {
+            contentType: 'equation' as const,
+            latex,
+            displayMode
+          }
+        };
+      }
+      
+      // Check for image patterns
+      if (content.match(/^!\[.*\]\(.*\)$/)) {
+        const match = content.match(/^!\[(.*)\]\((.*)\)$/);
+        const alt = match?.[1] || 'Image';
+        const src = match?.[2] || '';
+        return {
+          ...baseCell,
+          type: 'markdown',
+          content,
+          renderingHints: {
+            contentType: 'image' as const,
+            src,
+            alt,
+            originalSize: { width: 300, height: 200 }
+          }
+        };
+      }
+      
+      // Check for graph patterns
+      if (content.includes('CHART') || renderingHints.contentType === 'graph') {
+        return {
+          ...baseCell,
+          type: 'markdown',
+          content,
+          renderingHints: {
+            contentType: 'graph' as const,
+            chartType: renderingHints.chartType || 'line',
+            data: renderingHints.data || {},
+            config: renderingHints.config || {}
+          }
+        };
+      }
+      
+      // Default to text markdown cell
       return {
         ...baseCell,
         type: 'markdown',
         content,
         renderingHints: {
           contentType: 'text' as const,
-          fontSize: 14,
-          fontFamily: 'Arial, sans-serif'
+          fontSize: renderingHints.fontSize || 14,
+          fontFamily: renderingHints.fontFamily || 'Arial, sans-serif'
         }
       };
     }
@@ -269,11 +314,23 @@ export class JupyterConversionService {
       return {
         ...baseCell,
         type: 'raw',
-        content
+        content,
+        format: 'text'
       };
     }
 
-    return null;
+    // Fallback for unknown cell types
+    console.warn(`Unknown cell type: ${jupyterCell.cell_type}, converting to markdown`);
+    return {
+      ...baseCell,
+      type: 'markdown',
+      content: `[UNKNOWN CELL TYPE: ${jupyterCell.cell_type}]\n${content}`,
+      renderingHints: {
+        contentType: 'text' as const,
+        fontSize: 14,
+        fontFamily: 'Arial, sans-serif'
+      }
+    };
   }
 
   /**

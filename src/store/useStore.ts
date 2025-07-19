@@ -23,7 +23,7 @@ const createInitialDocument = (): DesignDiaryDocument => ({
   modified: new Date().toISOString(),
   canvas: {
     zoom: 1.0,
-    pan: { x: 0, y: 0 },
+    pan: { x: 100, y: 100 }, // Start with pages visible in viewport
     gridSize: 20,
     snapToGrid: true,
     pageSize: PAGE_SIZES.A4,
@@ -266,7 +266,7 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
       id: uuidv4(),
       position,
       size: { width: 300, height: 200 },
-      executionOrder: document.cells.length + 1,
+      executionOrder: null, // Only set when cell is actually executed
       collapsed: false,
       collapsedSize: { width: 300, height: 50 },
       selected: false,
@@ -361,20 +361,43 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
     const { document } = get();
     
     try {
-      const newCells = document.cells.map(cell => {
-        if (cell.id === cellId) {
-          // Create a safe update that preserves the original cell structure
-          const updatedCell = {
-            ...cell,
-            ...updates,
-            // Ensure critical properties are preserved
-            id: cell.id,
-            type: cell.type,
-          } as Cell;
-          return updatedCell;
-        }
-        return cell;
-      });
+      // Validate the updates object
+      if (!updates || typeof updates !== 'object') {
+        console.warn('Invalid updates object:', updates);
+        return;
+      }
+      
+      // Find the cell to update
+      const cellIndex = document.cells.findIndex(cell => cell.id === cellId);
+      if (cellIndex === -1) {
+        console.warn('Cell not found:', cellId);
+        return;
+      }
+      
+      const originalCell = document.cells[cellIndex];
+      
+      // Create a safe update that preserves the original cell structure
+      const updatedCell: Cell = {
+        ...originalCell,
+        ...updates,
+        // Ensure critical properties are preserved and valid
+        id: originalCell.id,
+        type: originalCell.type,
+        // Validate position if being updated
+        position: updates.position ? {
+          x: typeof updates.position.x === 'number' && !isNaN(updates.position.x) ? updates.position.x : originalCell.position.x,
+          y: typeof updates.position.y === 'number' && !isNaN(updates.position.y) ? updates.position.y : originalCell.position.y,
+        } : originalCell.position,
+        // Validate size if being updated
+        size: updates.size ? {
+          width: typeof updates.size.width === 'number' && !isNaN(updates.size.width) ? updates.size.width : originalCell.size.width,
+          height: typeof updates.size.height === 'number' && !isNaN(updates.size.height) ? updates.size.height : originalCell.size.height,
+        } : originalCell.size,
+      } as Cell;
+      
+      // Create new cells array with the updated cell
+      const newCells = [...document.cells];
+      newCells[cellIndex] = updatedCell;
       
       const newDocument = {
         ...document,
@@ -616,9 +639,10 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
         ? (result.stdout || 'Execution completed successfully')
         : (result.stderr || 'Execution failed');
 
-      // Update the code cell with execution count
+      // Update the code cell with execution count and execution order
       get().updateCell(cellId, {
         executionCount: newExecutionCount,
+        executionOrder: newExecutionCount, // Set execution order when cell is executed
       });
 
       // Process rich outputs

@@ -1,7 +1,34 @@
-import React, { useCallback, useRef, useEffect } from 'react';
+import React, { useCallback, useRef, useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { MarkdownCell } from '../../types';
 import { useStore } from '../../store/useStore';
+
+// Simple markdown renderer
+const renderMarkdown = (text: string): string => {
+  return text
+    // Headers
+    .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+    .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+    .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+    // Bold
+    .replace(/\*\*(.*)\*\*/gim, '<strong>$1</strong>')
+    .replace(/__(.*?)__/gim, '<strong>$1</strong>')
+    // Italic
+    .replace(/\*(.*?)\*/gim, '<em>$1</em>')
+    .replace(/_(.*?)_/gim, '<em>$1</em>')
+    // Code
+    .replace(/`(.*?)`/gim, '<code>$1</code>')
+    // Links
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2" target="_blank">$1</a>')
+    // Line breaks
+    .replace(/\n/gim, '<br>')
+    // Lists
+    .replace(/^\* (.*$)/gim, '<li>$1</li>')
+    .replace(/^- (.*$)/gim, '<li>$1</li>')
+    .replace(/^\d+\. (.*$)/gim, '<li>$1</li>')
+    // Blockquotes
+    .replace(/^> (.*$)/gim, '<blockquote>$1</blockquote>');
+};
 
 const TextCellContainer = styled.div`
   width: 100%;
@@ -41,6 +68,47 @@ const FontControls = styled.div`
   background: #f8f9fa;
   border-radius: 4px;
   font-size: 12px;
+  align-items: center;
+`;
+
+const ModeToggle = styled.button<{ $isActive: boolean }>`
+  padding: 4px 8px;
+  border: 1px solid #dee2e6;
+  border-radius: 3px;
+  background: ${props => props.$isActive ? '#007bff' : 'white'};
+  color: ${props => props.$isActive ? 'white' : '#495057'};
+  font-size: 11px;
+  cursor: pointer;
+  
+  &:hover {
+    background: ${props => props.$isActive ? '#0056b3' : '#f8f9fa'};
+  }
+`;
+
+const RenderedContent = styled.div<{ fontSize: number; fontFamily: string }>`
+  width: 100%;
+  height: 100%;
+  padding: 12px;
+  font-size: ${props => props.fontSize}px;
+  font-family: ${props => props.fontFamily};
+  overflow: auto;
+  background: white;
+  
+  h1, h2, h3 { margin: 0.5em 0; }
+  p { margin: 0.5em 0; }
+  code { 
+    background: #f8f9fa; 
+    padding: 2px 4px; 
+    border-radius: 3px; 
+    font-family: 'Courier New', monospace;
+  }
+  blockquote {
+    border-left: 4px solid #007bff;
+    margin: 0.5em 0;
+    padding-left: 1em;
+    color: #6c757d;
+  }
+  li { margin: 0.25em 0; }
 `;
 
 const FontSizeInput = styled.input`
@@ -66,6 +134,7 @@ interface TextCellProps {
 const TextCell: React.FC<TextCellProps> = ({ cell }) => {
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const { updateCell } = useStore();
+  const [isEditMode, setIsEditMode] = useState(true);
 
   // Safely access renderingHints with proper defaults
   const renderingHints = cell.renderingHints || {};
@@ -109,6 +178,19 @@ const TextCell: React.FC<TextCellProps> = ({ cell }) => {
   return (
     <TextCellContainer>
       <FontControls>
+        <ModeToggle 
+          $isActive={isEditMode} 
+          onClick={() => setIsEditMode(true)}
+        >
+          Edit
+        </ModeToggle>
+        <ModeToggle 
+          $isActive={!isEditMode} 
+          onClick={() => setIsEditMode(false)}
+        >
+          Render
+        </ModeToggle>
+        
         <label>
           Size:
           <FontSizeInput
@@ -136,14 +218,22 @@ const TextCell: React.FC<TextCellProps> = ({ cell }) => {
       </FontControls>
       
       <TextEditor>
-        <TextArea
-          ref={textAreaRef}
-          value={cell.content}
-          onChange={handleContentChange}
-          placeholder="Enter your text here..."
-          fontSize={fontSize}
-          fontFamily={fontFamily}
-        />
+        {isEditMode ? (
+          <TextArea
+            ref={textAreaRef}
+            value={cell.content}
+            onChange={handleContentChange}
+            placeholder="Enter your markdown text here..."
+            fontSize={fontSize}
+            fontFamily={fontFamily}
+          />
+        ) : (
+          <RenderedContent
+            fontSize={fontSize}
+            fontFamily={fontFamily}
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(cell.content || '') }}
+          />
+        )}
       </TextEditor>
     </TextCellContainer>
   );

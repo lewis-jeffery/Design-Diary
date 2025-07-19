@@ -3,7 +3,7 @@ import styled from 'styled-components';
 import { Cell } from '../../types';
 import { useStore } from '../../store/useStore';
 
-const ToolbarContainer = styled.div`
+const ToolbarContainer = styled.div<{ $selected: boolean }>`
   position: absolute;
   top: -32px;
   right: 0;
@@ -14,12 +14,14 @@ const ToolbarContainer = styled.div`
   border-radius: 4px;
   padding: 4px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  opacity: 0;
+  opacity: ${props => props.$selected ? 1 : 0};
   transition: opacity 0.2s;
   z-index: 1001;
+  pointer-events: ${props => props.$selected ? 'auto' : 'none'};
 
   .cell-container:hover & {
-    opacity: 1;
+    opacity: ${props => props.$selected ? 1 : 0.7};
+    pointer-events: auto;
   }
 `;
 
@@ -114,7 +116,7 @@ const CellToolbar: React.FC<CellToolbarProps> = ({ cell }) => {
   }, [cell.position, cell.size, addCell]);
 
   return (
-    <ToolbarContainer className="cell-toolbar">
+    <ToolbarContainer className="cell-toolbar" $selected={cell.selected}>
       {cell.type === 'code' && (
         <ExecuteButton onClick={handleExecute} title="Execute Cell">
           ▶

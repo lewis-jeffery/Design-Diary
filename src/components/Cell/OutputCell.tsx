@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import styled from 'styled-components';
 import { OutputCell as OutputCellType, RichOutput } from '../../types';
 
@@ -9,7 +9,7 @@ const OutputCellContainer = styled.div`
   flex-direction: column;
 `;
 
-const OutputArea = styled.div<{ $success?: boolean }>`
+const OutputArea = styled.div<{ $success?: boolean; $scrollable?: boolean }>`
   flex: 1;
   padding: 12px;
   background: ${props => 
@@ -22,8 +22,9 @@ const OutputArea = styled.div<{ $success?: boolean }>`
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 13px;
   white-space: pre-wrap;
-  overflow-y: auto;
+  overflow-y: ${props => props.$scrollable ? 'auto' : 'visible'};
   line-height: 1.4;
+  min-height: 0; /* Allow flex item to shrink */
 `;
 
 const OutputHeader = styled.div<{ $success?: boolean }>`
@@ -84,11 +85,33 @@ const TextOutput = styled.div`
   line-height: 1.4;
 `;
 
+const ScrollControls = styled.div`
+  display: flex;
+  gap: 4px;
+  align-items: center;
+`;
+
+const ScrollToggle = styled.button<{ $active: boolean }>`
+  padding: 2px 6px;
+  border: 1px solid #dee2e6;
+  border-radius: 3px;
+  background: ${props => props.$active ? '#007bff' : 'white'};
+  color: ${props => props.$active ? 'white' : '#495057'};
+  font-size: 10px;
+  cursor: pointer;
+  
+  &:hover {
+    background: ${props => props.$active ? '#0056b3' : '#f8f9fa'};
+  }
+`;
+
 interface OutputCellProps {
   cell: OutputCellType;
 }
 
 const OutputCell: React.FC<OutputCellProps> = ({ cell }) => {
+  const [isScrollable, setIsScrollable] = useState(false);
+
   const getStatusText = () => {
     if (cell.success === true) return '✅ Success';
     if (cell.success === false) return '❌ Error';
@@ -140,9 +163,25 @@ const OutputCell: React.FC<OutputCellProps> = ({ cell }) => {
       <OutputWrapper>
         <OutputHeader $success={cell.success}>
           <span>{getStatusText()}</span>
-          {getExecutionTime() && <span>{getExecutionTime()}</span>}
+          <ScrollControls>
+            <ScrollToggle 
+              $active={!isScrollable} 
+              onClick={() => setIsScrollable(false)}
+              title="Show full output"
+            >
+              Full
+            </ScrollToggle>
+            <ScrollToggle 
+              $active={isScrollable} 
+              onClick={() => setIsScrollable(true)}
+              title="Scroll output (max 300px)"
+            >
+              Scroll
+            </ScrollToggle>
+            {getExecutionTime() && <span>{getExecutionTime()}</span>}
+          </ScrollControls>
         </OutputHeader>
-        <OutputArea $success={cell.success}>
+        <OutputArea $success={cell.success} $scrollable={isScrollable}>
           {hasRichOutputs ? (
             <RichOutputContainer>
               {cell.outputs!.map((output, index) => renderRichOutput(output, index))}

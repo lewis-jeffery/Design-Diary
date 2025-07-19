@@ -5,7 +5,7 @@
   "keywords": ["jupyter", "notebook", "canvas", "visual", "editor", "python", "react", "typescript"],
   "author": "Design Diary Contributors",
   "license": "MIT",
-  "homepage": "https://github.com/your-username/design-diary#readme",
+  "homepage": ".",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/your-username/design-diary.git"

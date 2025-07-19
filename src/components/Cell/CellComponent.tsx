@@ -22,17 +22,18 @@ const CellContainer = styled.div<{
   top: ${props => props.$position.y}px;
   width: ${props => props.$size.width}px;
   height: ${props => props.$size.height}px;
-  border: 2px solid ${props => props.$selected ? '#007bff' : '#dee2e6'};
+  border: 2px solid ${props => props.$selected ? '#007bff' : 'transparent'};
   border-radius: 8px;
   background: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: ${props => props.$selected ? '0 2px 8px rgba(0, 0, 0, 0.1)' : 'none'};
   z-index: ${props => props.$zIndex};
   cursor: move;
   overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
   
   &:hover {
-    border-color: ${props => props.$selected ? '#007bff' : '#adb5bd'};
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-color: ${props => props.$selected ? '#007bff' : '#dee2e6'};
+    box-shadow: ${props => props.$selected ? '0 4px 12px rgba(0, 0, 0, 0.15)' : '0 2px 8px rgba(0, 0, 0, 0.1)'};
   }
 
   ${props => props.$collapsed && `

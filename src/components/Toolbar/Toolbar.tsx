@@ -7,6 +7,7 @@ const ToolbarContainer = styled.div`
   position: fixed;
   top: 20px;
   left: 20px;
+  right: 20px;
   display: flex;
   gap: 8px;
   background: white;
@@ -15,6 +16,27 @@ const ToolbarContainer = styled.div`
   padding: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 1000;
+  overflow-x: auto;
+  max-width: calc(100vw - 40px);
+  
+  /* Ensure the quit button is always visible */
+  &::-webkit-scrollbar {
+    height: 4px;
+  }
+  
+  &::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 2px;
+  }
+  
+  &::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 2px;
+  }
+  
+  &::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+  }
 `;
 
 const ToolbarSection = styled.div`
@@ -81,6 +103,18 @@ const DocumentName = styled.div`
 const ZoomInfo = styled.div`
   font-size: 11px;
   color: #6c757d;
+`;
+
+const QuitButton = styled(ToolbarButton)`
+  background: #dc3545;
+  color: white;
+  border-color: #dc3545;
+  
+  &:hover {
+    background: #c82333;
+    border-color: #bd2130;
+    color: white;
+  }
 `;
 
 const Toolbar: React.FC = () => {
@@ -356,6 +390,76 @@ const Toolbar: React.FC = () => {
     input.click();
   }, [importFromJupyter]);
 
+  const handleQuit = useCallback(async () => {
+    const hasUnsavedChanges = designDocument.cells.length > 0 && !savedFileInfo.baseFileName;
+    
+    if (hasUnsavedChanges) {
+      const shouldSave = window.confirm(
+        'You have unsaved changes. Would you like to save your work before quitting?\n\n' +
+        'Click "OK" to save and quit, or "Cancel" to quit without saving.'
+      );
+      
+      if (shouldSave) {
+        try {
+          // Auto-save the current document
+          saveAsJupyter();
+          // Give a moment for the save to complete
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (error) {
+          console.error('Error saving before quit:', error);
+          const forceQuit = window.confirm(
+            'Failed to save the document. Do you want to quit anyway?\n\n' +
+            'Click "OK" to quit without saving, or "Cancel" to stay.'
+          );
+          if (!forceQuit) {
+            return;
+          }
+        }
+      }
+    }
+
+    // Show shutdown message
+    const shutdownMessage = document.createElement('div');
+    shutdownMessage.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      border: 2px solid #dc3545;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      z-index: 10000;
+      text-align: center;
+      font-family: Arial, sans-serif;
+    `;
+    shutdownMessage.innerHTML = `
+      <h3 style="margin: 0 0 10px 0; color: #dc3545;">🔄 Shutting Down Design Diary</h3>
+      <p style="margin: 0; color: #495057;">Saving files and cleaning up...</p>
+    `;
+    document.body.appendChild(shutdownMessage);
+
+    try {
+      // Call shutdown endpoint to gracefully stop servers
+      await fetch('/api/shutdown', { method: 'POST' });
+    } catch (error) {
+      console.log('Server shutdown initiated');
+    }
+
+    // Close the window/tab after a brief delay
+    setTimeout(() => {
+      window.close();
+      // If window.close() doesn't work (some browsers block it), show alternative message
+      setTimeout(() => {
+        shutdownMessage.innerHTML = `
+          <h3 style="margin: 0 0 10px 0; color: #28a745;">✅ Shutdown Complete</h3>
+          <p style="margin: 0; color: #495057;">You can now safely close this tab or window.</p>
+        `;
+      }, 1000);
+    }, 2000);
+  }, [designDocument.cells.length, savedFileInfo.baseFileName, saveAsJupyter]);
+
   return (
     <ToolbarContainer>
       <ToolbarSection>
@@ -461,6 +565,12 @@ const Toolbar: React.FC = () => {
         <DocumentName>{designDocument.name}</DocumentName>
         <ZoomInfo>{designDocument.cells.length} cells • {designDocument.canvas.pageSize.name} {designDocument.canvas.orientation}</ZoomInfo>
       </DocumentInfo>
+
+      <ToolbarSection>
+        <QuitButton onClick={handleQuit}>
+          🚪 Quit
+        </QuitButton>
+      </ToolbarSection>
     </ToolbarContainer>
   );
 };

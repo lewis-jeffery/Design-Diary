@@ -104,6 +104,7 @@ import json
 import base64
 import io
 import traceback
+import re
 from contextlib import redirect_stdout, redirect_stderr
 import threading
 import queue
@@ -121,6 +122,38 @@ except ImportError:
 # Global variables for session management
 _output_dir = sys.argv[1] if len(sys.argv) > 1 else None
 _session_globals = {}  # Persistent global namespace for variables
+_cell_outputs = {}  # Track outputs per cell for clearing
+
+# IPython magic commands support
+def handle_magic_commands(code):
+    """Process IPython magic commands and return cleaned code"""
+    lines = code.split('\\n')
+    cleaned_lines = []
+    in_cell_magic = False
+    
+    for line in lines:
+        stripped = line.strip()
+        
+        # Handle cell magics (%%magic)
+        if stripped.startswith('%%'):
+            in_cell_magic = True
+            continue
+        elif in_cell_magic and not stripped.startswith('%'):
+            # Skip lines that are part of a cell magic block
+            continue
+        elif in_cell_magic and stripped.startswith('%'):
+            # End of cell magic block
+            in_cell_magic = False
+            continue
+        
+        # Handle line magics (%magic)
+        if stripped.startswith('%'):
+            # Skip all line magics including %matplotlib inline
+            continue
+        else:
+            cleaned_lines.append(line)
+    
+    return '\\n'.join(cleaned_lines)
 
 def capture_output(data, output_type='text', metadata=None):
     """Capture rich output data"""
@@ -142,9 +175,40 @@ def save_matplotlib_figure(fig, filename):
 
 def execute_code_block(code, execution_id):
     """Execute a code block and return results"""
-    global _session_globals
+    global _session_globals, _cell_outputs
+    
+    # Extract cell ID from execution_id for output tracking
+    cell_id = execution_id.split('_')[0] if '_' in execution_id else execution_id
+    
+    # Clear previous outputs for this cell
+    if cell_id in _cell_outputs:
+        # Clean up old image files
+        for old_output in _cell_outputs[cell_id]:
+            if old_output.get('type') == 'image' and old_output.get('data'):
+                old_file_path = os.path.join(_output_dir, old_output['data'])
+                try:
+                    if os.path.exists(old_file_path):
+                        os.remove(old_file_path)
+                except Exception:
+                    pass
     
     outputs = []
+    _cell_outputs[cell_id] = outputs  # Track outputs for this cell
+    
+    # Process magic commands
+    cleaned_code = handle_magic_commands(code)
+    
+    # Skip execution if code is empty after magic processing
+    if not cleaned_code.strip():
+        return {
+            'stdout': '',
+            'stderr': '',
+            'outputs': outputs
+        }
+    
+    # Clear any existing matplotlib figures before execution
+    if HAS_MATPLOTLIB:
+        plt.close('all')
     
     # Override plt.show to capture figures
     if HAS_MATPLOTLIB:
@@ -152,14 +216,15 @@ def execute_code_block(code, execution_id):
         def custom_show(*args, **kwargs):
             fig = plt.gcf()
             if fig.get_axes():  # Only save if figure has content
-                filename = f"plot_{execution_id}_{len(outputs)}.png"
+                filename = f"plot_{cell_id}_{len(outputs)}.png"
                 saved_path = save_matplotlib_figure(fig, filename)
                 if saved_path:
-                    outputs.append(capture_output(saved_path, 'image', {
+                    output_data = capture_output(saved_path, 'image', {
                         'width': fig.get_figwidth() * fig.dpi,
                         'height': fig.get_figheight() * fig.dpi,
                         'mimeType': 'image/png'
-                    }))
+                    })
+                    outputs.append(output_data)
             plt.close()  # Close the figure to free memory
         
         plt.show = custom_show
@@ -170,22 +235,23 @@ def execute_code_block(code, execution_id):
     
     try:
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-            # Execute the user code in the persistent global namespace
-            exec(code, _session_globals)
+            # Execute the cleaned user code in the persistent global namespace
+            exec(cleaned_code, _session_globals)
             
-            # Auto-capture any remaining matplotlib figures
+            # Auto-capture any remaining matplotlib figures that weren't shown explicitly
             if HAS_MATPLOTLIB and plt.get_fignums():
                 for fig_num in plt.get_fignums():
                     fig = plt.figure(fig_num)
                     if fig.get_axes():
-                        filename = f"plot_{execution_id}_{len(outputs)}.png"
+                        filename = f"plot_{cell_id}_{len(outputs)}.png"
                         saved_path = save_matplotlib_figure(fig, filename)
                         if saved_path:
-                            outputs.append(capture_output(saved_path, 'image', {
+                            output_data = capture_output(saved_path, 'image', {
                                 'width': fig.get_figwidth() * fig.dpi,
                                 'height': fig.get_figheight() * fig.dpi,
                                 'mimeType': 'image/png'
-                            }))
+                            })
+                            outputs.append(output_data)
                     plt.close(fig)
     
     except Exception as e:
@@ -525,8 +591,95 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000); // Clean up every 10 minutes
 
-app.listen(PORT, () => {
+// Graceful shutdown endpoint
+app.post('/api/shutdown', (req, res) => {
+  console.log('🔄 Shutdown request received');
+  
+  res.json({ 
+    message: 'Shutdown initiated',
+    timestamp: new Date().toISOString()
+  });
+  
+  // Clean up persistent sessions
+  console.log('🧹 Cleaning up Python sessions...');
+  for (const [documentId, session] of persistentSessions.entries()) {
+    try {
+      session.process.stdin.write('EXIT\n');
+      session.process.kill('SIGTERM');
+      console.log(`✅ Closed Python session for document: ${documentId}`);
+    } catch (err) {
+      console.warn(`⚠️ Failed to close session ${documentId}:`, err.message);
+    }
+  }
+  persistentSessions.clear();
+  
+  // Clean up execution sessions
+  executionSessions.clear();
+  
+  // Clean up temp files
+  try {
+    const files = fs.readdirSync(outputDir);
+    files.forEach(file => {
+      try {
+        fs.unlinkSync(path.join(outputDir, file));
+      } catch (err) {
+        console.warn(`⚠️ Failed to delete ${file}:`, err.message);
+      }
+    });
+    console.log('🗑️ Cleaned up temporary files');
+  } catch (err) {
+    console.warn('⚠️ Failed to clean up output directory:', err.message);
+  }
+  
+  console.log('✅ Cleanup complete, shutting down server...');
+  
+  // Give a moment for the response to be sent, then shutdown
+  setTimeout(() => {
+    process.exit(0);
+  }, 1000);
+});
+
+const server = app.listen(PORT, () => {
   console.log(`Design Diary server running on port ${PORT}`);
   console.log(`Using Python executable: ${PYTHON_EXECUTABLE}`);
   console.log(`Output directory: ${outputDir}`);
+});
+
+// Handle graceful shutdown on process signals
+process.on('SIGTERM', () => {
+  console.log('🔄 SIGTERM received, shutting down gracefully...');
+  
+  // Clean up persistent sessions
+  for (const [documentId, session] of persistentSessions.entries()) {
+    try {
+      session.process.stdin.write('EXIT\n');
+      session.process.kill('SIGTERM');
+    } catch (err) {
+      console.warn(`Failed to close session ${documentId}:`, err.message);
+    }
+  }
+  
+  server.close(() => {
+    console.log('✅ Server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('🔄 SIGINT received, shutting down gracefully...');
+  
+  // Clean up persistent sessions
+  for (const [documentId, session] of persistentSessions.entries()) {
+    try {
+      session.process.stdin.write('EXIT\n');
+      session.process.kill('SIGTERM');
+    } catch (err) {
+      console.warn(`Failed to close session ${documentId}:`, err.message);
+    }
+  }
+  
+  server.close(() => {
+    console.log('✅ Server closed');
+    process.exit(0);
+  });
 });

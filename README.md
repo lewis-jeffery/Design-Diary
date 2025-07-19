@@ -80,6 +80,27 @@ A modern, visual interface for creating and editing Jupyter notebooks with a can
 4. **Open your browser**
    Navigate to `http://localhost:3000`
 
+### Shutting Down
+
+Design Diary provides multiple ways to gracefully shut down the application:
+
+1. **Using the Quit Button**: Click the red "🚪 Quit" button in the toolbar
+   - Automatically saves unsaved work (with confirmation)
+   - Gracefully shuts down both frontend and backend servers
+   - Cleans up temporary files and Python sessions
+
+2. **Using the Shutdown Script**: Run the shutdown script from the command line
+   ```bash
+   ./shutdown.sh
+   ```
+   - Detects running servers and shuts them down gracefully
+   - Cleans up all temporary files and processes
+   - Safe to use even if servers are unresponsive
+
+3. **Manual Shutdown**: Use Ctrl+C in the terminal running `./start-dev.sh`
+   - Servers will attempt graceful shutdown
+   - May require running `./shutdown.sh` for complete cleanup
+
 ## 📖 Usage Guide
 
 ### Creating Your First Document

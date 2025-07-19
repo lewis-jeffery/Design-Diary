@@ -22,12 +22,76 @@ const OutputArea = styled.div<{ $success?: boolean; $scrollable?: boolean }>`
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 13px;
   white-space: pre-wrap;
-  overflow-y: ${props => props.$scrollable ? 'auto' : 'visible'};
   line-height: 1.4;
-  min-height: 0; /* Allow flex item to shrink */
+  min-height: 0;
+  
+  /* Dynamic sizing based on scroll mode */
+  ${props => props.$scrollable ? `
+    height: calc(100% - 40px); /* Use available height minus header in scroll mode */
+    min-height: 200px; /* Minimum height for usability */
+    max-height: calc(100% - 40px); /* Constrain to available space */
+    overflow-y: auto;
+    overflow-x: auto;
+    
+    /* Enhanced scrollbar styling for scroll mode */
+    &::-webkit-scrollbar {
+      width: 12px;
+      height: 12px;
+    }
+    
+    &::-webkit-scrollbar-track {
+      background: #f1f1f1;
+      border-radius: 6px;
+    }
+    
+    &::-webkit-scrollbar-thumb {
+      background: #c1c1c1;
+      border-radius: 6px;
+      border: 2px solid #f1f1f1;
+    }
+    
+    &::-webkit-scrollbar-thumb:hover {
+      background: #a8a8a8;
+    }
+    
+    &::-webkit-scrollbar-corner {
+      background: #f1f1f1;
+    }
+  ` : `
+    height: calc(100% - 40px); /* Use available height minus header in full mode */
+    overflow: visible;
+    max-height: none;
+    
+    /* Hide scrollbars in full mode */
+    &::-webkit-scrollbar {
+      display: none;
+    }
+    
+    /* For Firefox */
+    scrollbar-width: none;
+  `}
+  
+  /* Ensure proper scrolling behavior */
+  scroll-behavior: smooth;
+  
+  /* Critical: Prevent event bubbling to canvas */
+  * {
+    pointer-events: auto;
+  }
+  
+  /* Focus styles for better UX */
+  &:focus {
+    outline: 2px solid #007bff;
+    outline-offset: -2px;
+  }
+  
+  /* Ensure the area is focusable */
+  &[tabindex] {
+    cursor: text;
+  }
 `;
 
-const OutputHeader = styled.div<{ $success?: boolean }>`
+const OutputHeader = styled.div<{ $success?: boolean; $selected?: boolean }>`
   padding: 6px 12px;
   background: ${props => 
     props.$success === false ? '#fed7d7' : 
@@ -41,9 +105,11 @@ const OutputHeader = styled.div<{ $success?: boolean }>`
   display: flex;
   justify-content: space-between;
   align-items: center;
+  opacity: ${props => props.$selected ? 1 : 0};
+  transition: opacity 0.2s ease-in-out;
 `;
 
-const ExecutionNumber = styled.div`
+const ExecutionNumber = styled.div<{ $selected?: boolean }>`
   position: absolute;
   top: 8px;
   left: 8px;
@@ -55,6 +121,8 @@ const ExecutionNumber = styled.div`
   font-weight: 600;
   color: #495057;
   z-index: 15;
+  opacity: ${props => props.$selected ? 1 : 0};
+  transition: opacity 0.2s ease-in-out;
 `;
 
 const OutputWrapper = styled.div`
@@ -107,9 +175,10 @@ const ScrollToggle = styled.button<{ $active: boolean }>`
 
 interface OutputCellProps {
   cell: OutputCellType;
+  selected?: boolean;
 }
 
-const OutputCell: React.FC<OutputCellProps> = ({ cell }) => {
+const OutputCell: React.FC<OutputCellProps> = ({ cell, selected = false }) => {
   const [isScrollable, setIsScrollable] = useState(false);
 
   const getStatusText = () => {
@@ -124,6 +193,35 @@ const OutputCell: React.FC<OutputCellProps> = ({ cell }) => {
       return time.toLocaleTimeString();
     }
     return '';
+  };
+
+  // Prevent canvas scrolling when scrolling within output area
+  const handleWheel = (e: React.WheelEvent) => {
+    // Always prevent canvas scrolling when interacting with output
+    e.stopPropagation();
+    e.preventDefault();
+    
+    // Handle scrolling manually for the output area
+    const target = e.currentTarget as HTMLElement;
+    const scrollAmount = e.deltaY;
+    
+    if (isScrollable) {
+      // In scroll mode, scroll the output area
+      target.scrollTop += scrollAmount;
+    } else {
+      // In full mode, still prevent canvas scrolling but allow natural overflow
+      // The content will naturally overflow and be accessible
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+  };
+
+  const handleMouseEnter = (e: React.MouseEvent) => {
+    // Ensure focus is on the output area for proper scroll handling
+    const target = e.currentTarget as HTMLElement;
+    target.focus();
   };
 
   const renderRichOutput = (output: RichOutput, index: number) => {
@@ -156,12 +254,12 @@ const OutputCell: React.FC<OutputCellProps> = ({ cell }) => {
   return (
     <OutputCellContainer>
       {cell.executionCount && (
-        <ExecutionNumber>
+        <ExecutionNumber $selected={selected}>
           Out [{cell.executionCount}]
         </ExecutionNumber>
       )}
       <OutputWrapper>
-        <OutputHeader $success={cell.success}>
+        <OutputHeader $success={cell.success} $selected={selected}>
           <span>{getStatusText()}</span>
           <ScrollControls>
             <ScrollToggle 
@@ -181,7 +279,14 @@ const OutputCell: React.FC<OutputCellProps> = ({ cell }) => {
             {getExecutionTime() && <span>{getExecutionTime()}</span>}
           </ScrollControls>
         </OutputHeader>
-        <OutputArea $success={cell.success} $scrollable={isScrollable}>
+        <OutputArea 
+          $success={cell.success} 
+          $scrollable={isScrollable}
+          onWheel={handleWheel}
+          onMouseDown={handleMouseDown}
+          onMouseEnter={handleMouseEnter}
+          tabIndex={0}
+        >
           {hasRichOutputs ? (
             <RichOutputContainer>
               {cell.outputs!.map((output, index) => renderRichOutput(output, index))}

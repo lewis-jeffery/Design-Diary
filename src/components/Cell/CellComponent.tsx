@@ -43,11 +43,21 @@ const CellContainer = styled.div<{
   `}
 `;
 
-const CellContent = styled.div<{ $collapsed: boolean }>`
+const CellContent = styled.div<{ $collapsed: boolean; $isOutputCell: boolean }>`
   width: 100%;
-  height: ${props => props.$collapsed ? 'auto' : '100%'};
-  padding: 8px;
-  overflow: ${props => props.$collapsed ? 'hidden' : 'auto'};
+  height: ${props => props.$collapsed ? 'auto' : 'calc(100% - 40px)'}; /* Account for toolbar */
+  padding: ${props => props.$isOutputCell ? '0' : '8px'};
+  overflow: ${props => 
+    props.$collapsed ? 'hidden' : 
+    props.$isOutputCell ? 'visible' : 'auto'
+  };
+  
+  /* For output cells, ensure full height usage */
+  ${props => props.$isOutputCell && `
+    margin: 8px;
+    width: calc(100% - 16px);
+    height: calc(100% - 48px); /* Account for toolbar + margins */
+  `}
 `;
 
 const ResizeHandle = styled.div<{ $selected: boolean }>`
@@ -281,6 +291,13 @@ const CellComponent: React.FC<CellComponentProps> = ({ cell }) => {
     document.addEventListener('mouseup', handleMouseUp);
   }, [cell.id, cell.size, updateCellSize]);
 
+  const handleCellWheel = useCallback((e: React.WheelEvent) => {
+    // For output cells, prevent canvas scrolling
+    if (cell.type === 'raw') {
+      e.stopPropagation();
+    }
+  }, [cell.type]);
+
   const renderCellContent = () => {
     try {
       switch (cell.type) {
@@ -305,7 +322,7 @@ const CellComponent: React.FC<CellComponentProps> = ({ cell }) => {
               return <TextCell cell={markdownCell} />;
           }
         case 'raw':
-          return <OutputCell cell={cell as any} />;
+          return <OutputCell cell={cell as any} selected={cell.selected} />;
         default:
           return <div>Unknown cell type: {(cell as any).type}</div>;
       }
@@ -327,6 +344,7 @@ const CellComponent: React.FC<CellComponentProps> = ({ cell }) => {
       $collapsed={cell.collapsed}
       $zIndex={cell.zIndex}
       onMouseDown={handleMouseDown}
+      onWheel={handleCellWheel}
     >
       <DragHandle 
         className="drag-handle"
@@ -336,7 +354,7 @@ const CellComponent: React.FC<CellComponentProps> = ({ cell }) => {
       
       <CellToolbar cell={cell} />
       
-      <CellContent $collapsed={cell.collapsed}>
+      <CellContent $collapsed={cell.collapsed} $isOutputCell={cell.type === 'raw'}>
         {renderCellContent()}
       </CellContent>
       

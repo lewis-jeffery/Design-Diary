@@ -655,75 +655,152 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
     const newExecutionCount = globalExecutionCount + 1;
     set({ isExecuting: true, globalExecutionCount: newExecutionCount });
 
+    // Clear any existing output cells for this code cell BEFORE execution
+    const currentDocument = get().document;
+    const existingOutputCells = currentDocument.cells.filter(c => 
+      c.type === 'raw' && (c as any).sourceCodeCellId === cellId
+    );
+    
+    // Remove existing output cells
+    if (existingOutputCells.length > 0) {
+      const cellsWithoutOldOutputs = currentDocument.cells.filter(c => 
+        !(c.type === 'raw' && (c as any).sourceCodeCellId === cellId)
+      );
+      
+      set({
+        document: {
+          ...currentDocument,
+          cells: cellsWithoutOldOutputs,
+          modified: new Date().toISOString(),
+        },
+      });
+    }
+
     try {
       const result = await pythonExecutionService.executeCode(cell.content, cellId, document.id);
       
-      // Determine output content
-      const outputContent = result.success 
-        ? (result.stdout || 'Execution completed successfully')
-        : (result.stderr || 'Execution failed');
-
       // Update the code cell with execution count and execution order
       get().updateCell(cellId, {
         executionCount: newExecutionCount,
         executionOrder: newExecutionCount, // Set execution order when cell is executed
       });
 
-      // Process rich outputs
-      const richOutputs = result.outputs?.map((output: any) => ({
-        format: (output.type === 'image' ? 'image' : 'text') as 'image' | 'text',
-        data: output.type === 'image' ? `http://localhost:3001/api/outputs/${output.data}` : output.data,
-        metadata: output.metadata || {}
-      })) || [];
+      // Process outputs - handle both text and rich outputs
+      const hasTextOutput = result.stdout && result.stdout.trim();
+      const hasErrorOutput = result.stderr && result.stderr.trim();
+      const hasRichOutputs = result.outputs && result.outputs.length > 0;
 
-      // Find existing output cell for this code cell
-      const currentDocument = get().document;
-      const existingOutputCell = currentDocument.cells.find(c => 
-        c.type === 'raw' && (c as any).sourceCodeCellId === cellId
-      );
+      // Create output cells for different types of output
+      const updatedDocument = get().document;
+      let newCells = [...updatedDocument.cells];
+      let outputYOffset = 0;
 
-      if (existingOutputCell) {
-        // Update existing output cell
-        get().updateCell(existingOutputCell.id, {
-          content: outputContent,
-        });
-      } else {
-        // Create a new output cell positioned to the right of the code cell
-        const outputCellId = uuidv4();
-        const outputCell: Cell = {
-          id: outputCellId,
+      // Add text output if present
+      if (hasTextOutput || hasErrorOutput) {
+        const textOutputContent = hasErrorOutput ? result.stderr : result.stdout;
+        const textOutputCell: Cell = {
+          id: uuidv4(),
           type: 'raw',
           position: {
-            x: cell.position.x + cell.size.width + 20, // Position to the right with some spacing
-            y: cell.position.y, // Same vertical position
+            x: cell.position.x + cell.size.width + 20,
+            y: cell.position.y + outputYOffset,
           },
-          size: { width: 350, height: 200 },
-          executionOrder: currentDocument.cells.length + 1,
+          size: { width: 400, height: Math.max(100, Math.min(300, textOutputContent.split('\n').length * 20 + 40)) },
+          executionOrder: null,
           collapsed: false,
-          collapsedSize: { width: 350, height: 50 },
+          collapsedSize: { width: 400, height: 50 },
           selected: false,
-          zIndex: currentDocument.cells.length,
-          content: outputContent,
+          zIndex: newCells.length,
+          content: textOutputContent,
           format: 'text',
-        };
-
-        // Add the output cell to the document
-        const updatedDocument = get().document;
-        set({
-          document: {
-            ...updatedDocument,
-            cells: [...updatedDocument.cells, outputCell],
-            modified: new Date().toISOString(),
-          },
-        });
+        } as any;
+        
+        // Mark this as an output cell for this code cell
+        (textOutputCell as any).sourceCodeCellId = cellId;
+        (textOutputCell as any).outputType = hasErrorOutput ? 'error' : 'text';
+        (textOutputCell as any).success = !hasErrorOutput;
+        (textOutputCell as any).executionTime = new Date().toISOString();
+        
+        newCells.push(textOutputCell);
+        outputYOffset += textOutputCell.size.height + 20;
       }
 
-      // Update execution history
-      const finalDocument = get().document;
+      // Add rich outputs (images, plots, etc.)
+      if (hasRichOutputs && result.outputs) {
+        for (const output of result.outputs) {
+          if (output.type === 'image') {
+            const imageUrl = `http://localhost:3001/api/outputs/${output.data}`;
+            const imageOutputCell: Cell = {
+              id: uuidv4(),
+              type: 'raw',
+              position: {
+                x: cell.position.x + cell.size.width + 20,
+                y: cell.position.y + outputYOffset,
+              },
+              size: { 
+                width: Math.min(500, output.metadata?.width || 400), 
+                height: Math.min(400, output.metadata?.height || 300) 
+              },
+              executionOrder: null,
+              collapsed: false,
+              collapsedSize: { width: 400, height: 50 },
+              selected: false,
+              zIndex: newCells.length,
+              content: '', // No text content for image cells
+              format: 'text',
+            } as any;
+            
+            // Add proper rich outputs structure
+            (imageOutputCell as any).outputs = [{
+              format: 'image',
+              data: imageUrl,
+              metadata: output.metadata || {}
+            }];
+            
+            // Mark this as an output cell for this code cell
+            (imageOutputCell as any).sourceCodeCellId = cellId;
+            (imageOutputCell as any).outputType = 'image';
+            (imageOutputCell as any).success = true;
+            (imageOutputCell as any).executionTime = new Date().toISOString();
+            
+            newCells.push(imageOutputCell);
+            outputYOffset += imageOutputCell.size.height + 20;
+          }
+        }
+      }
+
+      // If no outputs at all, create a simple success message
+      if (!hasTextOutput && !hasErrorOutput && !hasRichOutputs) {
+        const successOutputCell: Cell = {
+          id: uuidv4(),
+          type: 'raw',
+          position: {
+            x: cell.position.x + cell.size.width + 20,
+            y: cell.position.y,
+          },
+          size: { width: 300, height: 60 },
+          executionOrder: null,
+          collapsed: false,
+          collapsedSize: { width: 300, height: 50 },
+          selected: false,
+          zIndex: newCells.length,
+          content: '✓ Execution completed successfully',
+          format: 'text',
+        } as any;
+        
+        (successOutputCell as any).sourceCodeCellId = cellId;
+        (successOutputCell as any).outputType = 'success';
+        
+        newCells.push(successOutputCell);
+      }
+
+      // Update the document with new cells
       set({
         document: {
-          ...finalDocument,
-          executionHistory: [...finalDocument.executionHistory, Date.now()],
+          ...updatedDocument,
+          cells: newCells,
+          executionHistory: [...updatedDocument.executionHistory, Date.now()],
+          modified: new Date().toISOString(),
         },
       });
 
@@ -737,46 +814,35 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
         executionCount: newExecutionCount,
       });
       
-      // Find existing output cell for this code cell
-      const currentDocument = get().document;
-      const existingOutputCell = currentDocument.cells.find(c => 
-        c.type === 'raw' && (c as any).sourceCodeCellId === cellId
-      );
+      // Create error output cell
+      const updatedDocument = get().document;
+      const errorOutputCell: Cell = {
+        id: uuidv4(),
+        type: 'raw',
+        position: {
+          x: cell.position.x + cell.size.width + 20,
+          y: cell.position.y,
+        },
+        size: { width: 400, height: 150 },
+        executionOrder: null,
+        collapsed: false,
+        collapsedSize: { width: 400, height: 50 },
+        selected: false,
+        zIndex: updatedDocument.cells.length,
+        content: `❌ Error: ${errorMessage}`,
+        format: 'text',
+      } as any;
 
-      if (existingOutputCell) {
-        // Update existing output cell with error
-        get().updateCell(existingOutputCell.id, {
-          content: `Error: ${errorMessage}`,
-        });
-      } else {
-        // Create a new error output cell
-        const outputCellId = uuidv4();
-        const errorOutputCell: Cell = {
-          id: outputCellId,
-          type: 'raw',
-          position: {
-            x: cell.position.x + cell.size.width + 20,
-            y: cell.position.y,
-          },
-          size: { width: 350, height: 200 },
-          executionOrder: currentDocument.cells.length + 1,
-          collapsed: false,
-          collapsedSize: { width: 350, height: 50 },
-          selected: false,
-          zIndex: currentDocument.cells.length,
-          content: `Error: ${errorMessage}`,
-          format: 'text',
-        };
+      (errorOutputCell as any).sourceCodeCellId = cellId;
+      (errorOutputCell as any).outputType = 'error';
 
-        const updatedDocument = get().document;
-        set({
-          document: {
-            ...updatedDocument,
-            cells: [...updatedDocument.cells, errorOutputCell],
-            modified: new Date().toISOString(),
-          },
-        });
-      }
+      set({
+        document: {
+          ...updatedDocument,
+          cells: [...updatedDocument.cells, errorOutputCell],
+          modified: new Date().toISOString(),
+        },
+      });
     } finally {
       set({ isExecuting: false });
     }

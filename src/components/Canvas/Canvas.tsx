@@ -166,17 +166,32 @@ const Canvas: React.FC = () => {
       const newZoom = Math.max(0.1, Math.min(3, canvas.zoom * delta));
       updateCanvasZoom(newZoom);
     } else {
-      // Pan with regular wheel
-      const panSpeed = 50;
+      // Pan with regular wheel - much slower and with bounds
+      const panSpeed = 15; // Reduced from 50 to 15 for better control
       const deltaX = e.shiftKey ? e.deltaY : e.deltaX; // Horizontal scroll with Shift
       const deltaY = e.shiftKey ? 0 : e.deltaY; // Vertical scroll normally
       
+      // Calculate new pan position
+      const newPanX = canvas.pan.x - deltaX * panSpeed / canvas.zoom;
+      const newPanY = canvas.pan.y - deltaY * panSpeed / canvas.zoom;
+      
+      // Calculate bounds based on content and pages
+      const margin = 200; // Extra margin beyond content
+      const minPanX = -pageDimensions.width - margin;
+      const maxPanX = margin;
+      const minPanY = -totalContentHeight - margin;
+      const maxPanY = margin;
+      
+      // Apply bounds to prevent scrolling too far
+      const boundedPanX = Math.max(minPanX, Math.min(maxPanX, newPanX));
+      const boundedPanY = Math.max(minPanY, Math.min(maxPanY, newPanY));
+      
       updateCanvasPan({
-        x: canvas.pan.x - deltaX * panSpeed / canvas.zoom,
-        y: canvas.pan.y - deltaY * panSpeed / canvas.zoom,
+        x: boundedPanX,
+        y: boundedPanY,
       });
     }
-  }, [canvas.zoom, canvas.pan, updateCanvasZoom, updateCanvasPan]);
+  }, [canvas.zoom, canvas.pan, updateCanvasZoom, updateCanvasPan, pageDimensions.width, totalContentHeight]);
 
   // Handle mouse down for panning and selection
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -215,7 +230,7 @@ const Canvas: React.FC = () => {
       }
       
       if (isPanningRef.current) {
-        // Handle canvas panning
+        // Handle canvas panning with bounds
         const deltaX = e.clientX - lastPanPositionRef.current.x;
         const deltaY = e.clientY - lastPanPositionRef.current.y;
         
@@ -223,9 +238,25 @@ const Canvas: React.FC = () => {
         if (typeof deltaX === 'number' && typeof deltaY === 'number' && 
             !isNaN(deltaX) && !isNaN(deltaY) && 
             isFinite(deltaX) && isFinite(deltaY)) {
+          
+          // Calculate new pan position
+          const newPanX = canvas.pan.x + deltaX;
+          const newPanY = canvas.pan.y + deltaY;
+          
+          // Calculate bounds based on content and pages
+          const margin = 200; // Extra margin beyond content
+          const minPanX = -pageDimensions.width - margin;
+          const maxPanX = margin;
+          const minPanY = -totalContentHeight - margin;
+          const maxPanY = margin;
+          
+          // Apply bounds to prevent panning too far
+          const boundedPanX = Math.max(minPanX, Math.min(maxPanX, newPanX));
+          const boundedPanY = Math.max(minPanY, Math.min(maxPanY, newPanY));
+          
           updateCanvasPan({
-            x: canvas.pan.x + deltaX,
-            y: canvas.pan.y + deltaY,
+            x: boundedPanX,
+            y: boundedPanY,
           });
           
           lastPanPositionRef.current = { x: e.clientX, y: e.clientY };
@@ -240,7 +271,7 @@ const Canvas: React.FC = () => {
       isPanningRef.current = false;
       isSelectingRef.current = false;
     }
-  }, [canvas.pan, canvas.zoom, dragState.isDragging, updateCanvasPan]);
+  }, [canvas.pan, canvas.zoom, dragState.isDragging, updateCanvasPan, pageDimensions.width, totalContentHeight]);
 
   // Handle mouse up
   const handleMouseUp = useCallback((e: React.MouseEvent) => {

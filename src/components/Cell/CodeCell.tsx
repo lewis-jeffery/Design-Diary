@@ -33,7 +33,7 @@ const CollapsedPreview = styled.div`
 `;
 
 
-const ExecuteButton = styled.button`
+const ExecuteButton = styled.button<{ $selected: boolean }>`
   position: absolute;
   top: 8px;
   right: 8px;
@@ -45,6 +45,9 @@ const ExecuteButton = styled.button`
   font-size: 11px;
   cursor: pointer;
   z-index: 10;
+  opacity: ${props => props.$selected ? 1 : 0};
+  pointer-events: ${props => props.$selected ? 'auto' : 'none'};
+  transition: opacity 0.2s;
 
   &:hover {
     background: #0056b3;
@@ -81,7 +84,7 @@ interface CodeCellProps {
 }
 
 const CodeCell: React.FC<CodeCellProps> = ({ cell }) => {
-  const { updateCell, executeCell, isExecuting } = useStore();
+  const { updateCell, executeCell, isExecuting, clearSelection } = useStore();
 
   const handleCodeChange = useCallback((value: string | undefined) => {
     if (value !== undefined) {
@@ -124,6 +127,7 @@ const CodeCell: React.FC<CodeCellProps> = ({ cell }) => {
       )}
       
       <ExecuteButton 
+        $selected={cell.selected}
         onClick={handleExecute}
         disabled={isExecuting}
       >
@@ -145,6 +149,37 @@ const CodeCell: React.FC<CodeCellProps> = ({ cell }) => {
               lineNumbers: 'on',
               wordWrap: 'on',
               automaticLayout: true,
+              selectOnLineNumbers: false,
+              readOnly: false,
+              domReadOnly: false,
+              contextmenu: false,
+            }}
+            loading={
+              <textarea
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  border: '1px solid #ccc',
+                  padding: '8px',
+                  fontFamily: 'Monaco, monospace',
+                  fontSize: '12px',
+                  resize: 'none',
+                  backgroundColor: '#f8f9fa'
+                }}
+                value={cell.content}
+                onChange={(e) => handleCodeChange(e.target.value)}
+                placeholder="Loading Monaco Editor..."
+                readOnly
+              />
+            }
+            onMount={(editor, monaco) => {
+              console.log('✅ Monaco Editor mounted successfully');
+              // Prevent any automatic selection when Monaco mounts
+              setTimeout(() => {
+                clearSelection();
+                // Also blur the editor to prevent focus-based selection
+                editor.getContainerDomNode().blur();
+              }, 50);
             }}
           />
         </CodeEditor>

@@ -30,7 +30,7 @@ if (!fs.existsSync(outputDir)) {
 // Serve static files from output directory
 app.use('/api/outputs', express.static(outputDir));
 
-// Function to find conda/python executable
+// Function to find conda/python executable and get shell environment
 function findPythonExecutable() {
   // Try to find conda python first
   const condaPath = process.env.CONDA_PREFIX;
@@ -60,7 +60,41 @@ function findPythonExecutable() {
   return 'python3';
 }
 
+// Function to get shell environment with .zshrc sourced
+function getShellEnvironment() {
+  try {
+    const { execSync } = require('child_process');
+    const homeDir = os.homedir();
+    const zshrcPath = path.join(homeDir, '.zshrc');
+    
+    // Source .zshrc and export environment variables
+    const envOutput = execSync(`/bin/zsh -c "source ${zshrcPath} 2>/dev/null; env"`, {
+      encoding: 'utf8',
+      timeout: 5000
+    });
+    
+    const env = { ...process.env };
+    
+    // Parse environment variables from shell output
+    envOutput.split('\n').forEach(line => {
+      const match = line.match(/^([^=]+)=(.*)$/);
+      if (match) {
+        const [, key, value] = match;
+        env[key] = value;
+      }
+    });
+    
+    console.log('Shell environment loaded with PYTHONPATH:', env.PYTHONPATH);
+    return env;
+    
+  } catch (error) {
+    console.warn('Failed to load shell environment, using default:', error.message);
+    return process.env;
+  }
+}
+
 const PYTHON_EXECUTABLE = findPythonExecutable();
+const SHELL_ENV = getShellEnvironment();
 
 // Persistent Python session runner for maintaining variable context
 const PERSISTENT_PYTHON_RUNNER = `
@@ -226,7 +260,7 @@ function getOrCreatePersistentSession(documentId = 'default') {
   
   const pythonProcess = spawn(PYTHON_EXECUTABLE, [runnerFile, outputDir], {
     cwd: tempDir,
-    env: { ...process.env }
+    env: SHELL_ENV
   });
   
   const session = {
@@ -423,7 +457,9 @@ app.get('/api/health', (req, res) => {
 // Test Python installation endpoint
 app.get('/api/python-info', async (req, res) => {
   try {
-    const pythonProcess = spawn(PYTHON_EXECUTABLE, ['-c', 'import sys; print(sys.version); print(sys.executable); import matplotlib; print("matplotlib available")']);
+    const pythonProcess = spawn(PYTHON_EXECUTABLE, ['-c', 'import sys; print(sys.version); print(sys.executable); import matplotlib; print("matplotlib available")'], {
+      env: SHELL_ENV
+    });
     
     let output = '';
     let error = '';

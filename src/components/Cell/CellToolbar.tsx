@@ -18,11 +18,6 @@ const ToolbarContainer = styled.div<{ $selected: boolean }>`
   transition: opacity 0.2s;
   z-index: 1001;
   pointer-events: ${props => props.$selected ? 'auto' : 'none'};
-
-  .cell-container:hover & {
-    opacity: ${props => props.$selected ? 1 : 0.7};
-    pointer-events: auto;
-  }
 `;
 
 const ToolbarButton = styled.button`

@@ -22,18 +22,19 @@ const CellContainer = styled.div<{
   top: ${props => props.$position.y}px;
   width: ${props => props.$size.width}px;
   height: ${props => props.$size.height}px;
-  border: 2px solid ${props => props.$selected ? '#007bff' : 'transparent'};
+  border: 2px solid ${props => props.$selected ? '#007bff' : '#e0e0e0'};
   border-radius: 8px;
   background: white;
-  box-shadow: ${props => props.$selected ? '0 2px 8px rgba(0, 0, 0, 0.1)' : 'none'};
+  box-shadow: ${props => props.$selected ? '0 2px 8px rgba(0, 0, 0, 0.1)' : '0 1px 3px rgba(0, 0, 0, 0.1)'};
   z-index: ${props => props.$zIndex};
   cursor: move;
   overflow: hidden;
   transition: border-color 0.2s, box-shadow 0.2s;
   
+  /* Only show hover effects when selected */
   &:hover {
-    border-color: ${props => props.$selected ? '#007bff' : '#dee2e6'};
-    box-shadow: ${props => props.$selected ? '0 4px 12px rgba(0, 0, 0, 0.15)' : '0 2px 8px rgba(0, 0, 0, 0.1)'};
+    border-color: ${props => props.$selected ? '#007bff' : 'transparent'};
+    box-shadow: ${props => props.$selected ? '0 4px 12px rgba(0, 0, 0, 0.15)' : 'none'};
   }
 
   ${props => props.$collapsed && `
@@ -49,7 +50,7 @@ const CellContent = styled.div<{ $collapsed: boolean }>`
   overflow: ${props => props.$collapsed ? 'hidden' : 'auto'};
 `;
 
-const ResizeHandle = styled.div`
+const ResizeHandle = styled.div<{ $selected: boolean }>`
   position: absolute;
   bottom: 0;
   right: 0;
@@ -57,19 +58,20 @@ const ResizeHandle = styled.div`
   height: 12px;
   background: #007bff;
   cursor: se-resize;
-  opacity: 0;
+  opacity: ${props => props.$selected ? 0.7 : 0};
   transition: opacity 0.2s;
 
+  /* Only show on hover when selected */
   ${CellContainer}:hover & {
-    opacity: 0.7;
+    opacity: ${props => props.$selected ? 1 : 0};
   }
 
   &:hover {
-    opacity: 1;
+    opacity: ${props => props.$selected ? 1 : 0} !important;
   }
 `;
 
-const DragHandle = styled.div`
+const DragHandle = styled.div<{ $selected: boolean }>`
   position: absolute;
   top: 4px;
   left: 4px;
@@ -78,8 +80,8 @@ const DragHandle = styled.div`
   background: #007bff;
   border-radius: 6px;
   cursor: move;
-  opacity: 0.3;
-  transition: opacity 0.2s;
+  opacity: ${props => props.$selected ? 0.9 : 0};
+  transition: opacity 0.2s, transform 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -88,13 +90,14 @@ const DragHandle = styled.div`
   z-index: 20;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 
+  /* Only show on hover when selected */
   ${CellContainer}:hover & {
-    opacity: 0.9;
+    opacity: ${props => props.$selected ? 1 : 0};
   }
 
   &:hover {
-    opacity: 1;
-    transform: scale(1.1);
+    opacity: ${props => props.$selected ? 1 : 0} !important;
+    transform: ${props => props.$selected ? 'scale(1.1)' : 'none'};
   }
 
   &::before {
@@ -238,8 +241,11 @@ const CellComponent: React.FC<CellComponentProps> = ({ cell }) => {
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     
-    // Only select the cell if not clicking on drag handle
-    if (!(e.target as HTMLElement).closest('.drag-handle')) {
+    // Only select the cell if not clicking on drag handle and if it's a real user interaction
+    // Also check that the event is not from a programmatic trigger
+    if (!(e.target as HTMLElement).closest('.drag-handle') && 
+        e.isTrusted && 
+        e.detail > 0) { // e.detail > 0 ensures it's a real click, not programmatic
       selectCell(cell.id, e.ctrlKey || e.metaKey);
     }
   }, [cell.id, selectCell]);
@@ -324,6 +330,7 @@ const CellComponent: React.FC<CellComponentProps> = ({ cell }) => {
     >
       <DragHandle 
         className="drag-handle"
+        $selected={cell.selected}
         onMouseDown={handleDragMouseDown}
       />
       
@@ -334,7 +341,10 @@ const CellComponent: React.FC<CellComponentProps> = ({ cell }) => {
       </CellContent>
       
       {!cell.collapsed && (
-        <ResizeHandle onMouseDown={handleResizeMouseDown} />
+        <ResizeHandle 
+          $selected={cell.selected}
+          onMouseDown={handleResizeMouseDown} 
+        />
       )}
     </CellContainer>
   );

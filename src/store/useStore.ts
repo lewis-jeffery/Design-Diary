@@ -137,7 +137,27 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
 
   importFromJupyter: (notebook: JupyterNotebook, layout: DesignDiaryLayout) => {
     const document = JupyterConversionService.fromJupyterFormat(notebook, layout);
-    set({ document });
+    // Ensure all imported cells are not selected
+    const documentWithClearedSelection = {
+      ...document,
+      cells: document.cells.map(cell => ({ ...cell, selected: false }))
+    };
+    
+    // Clear selection state first
+    set({
+      selectionState: {
+        selectedCellIds: [],
+        selectionBox: null,
+      }
+    });
+    
+    // Set the document
+    set({ document: documentWithClearedSelection });
+    
+    // Clear selection again after a short delay to handle any async selection
+    setTimeout(() => {
+      get().clearSelection();
+    }, 100);
   },
 
   // Save/Save As actions
@@ -262,6 +282,10 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
   // Cell actions
   addCell: (type: Cell['type'], position: Position, renderingHint?: string) => {
     const { document } = get();
+    
+    // Clear any existing selection first
+    get().clearSelection();
+    
     const baseCell = {
       id: uuidv4(),
       position,
@@ -348,13 +372,13 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
         throw new Error(`Unknown cell type: ${type}`);
     }
 
-    set({
-      document: {
-        ...document,
-        cells: [...document.cells, newCell],
-        modified: new Date().toISOString(),
-      },
-    });
+    const updatedDocument = {
+      ...document,
+      cells: [...document.cells, newCell],
+      modified: new Date().toISOString(),
+    };
+    
+    set({ document: updatedDocument });
   },
 
   updateCell: (cellId: string, updates: Partial<Cell>) => {

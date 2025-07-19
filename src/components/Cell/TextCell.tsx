@@ -133,8 +133,16 @@ interface TextCellProps {
 
 const TextCell: React.FC<TextCellProps> = ({ cell }) => {
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
-  const { updateCell } = useStore();
+  const { updateCell, clearSelection } = useStore();
   const [isEditMode, setIsEditMode] = useState(true);
+
+  // Clear selection when text cell mounts to prevent auto-selection
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      clearSelection();
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [clearSelection]);
 
   // Safely access renderingHints with proper defaults
   const renderingHints = cell.renderingHints || {};
@@ -177,45 +185,48 @@ const TextCell: React.FC<TextCellProps> = ({ cell }) => {
 
   return (
     <TextCellContainer>
-      <FontControls>
-        <ModeToggle 
-          $isActive={isEditMode} 
-          onClick={() => setIsEditMode(true)}
-        >
-          Edit
-        </ModeToggle>
-        <ModeToggle 
-          $isActive={!isEditMode} 
-          onClick={() => setIsEditMode(false)}
-        >
-          Render
-        </ModeToggle>
-        
-        <label>
-          Size:
-          <FontSizeInput
-            type="number"
-            min="8"
-            max="72"
-            value={fontSize}
-            onChange={handleFontSizeChange}
-          />
-        </label>
-        <label>
-          Font:
-          <FontFamilySelect
-            value={fontFamily}
-            onChange={handleFontFamilyChange}
+      {/* Only show controls when cell is selected */}
+      {cell.selected && (
+        <FontControls>
+          <ModeToggle 
+            $isActive={isEditMode} 
+            onClick={() => setIsEditMode(true)}
           >
-            <option value="Arial, sans-serif">Arial</option>
-            <option value="'Times New Roman', serif">Times New Roman</option>
-            <option value="'Courier New', monospace">Courier New</option>
-            <option value="Georgia, serif">Georgia</option>
-            <option value="Verdana, sans-serif">Verdana</option>
-            <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
-          </FontFamilySelect>
-        </label>
-      </FontControls>
+            Edit
+          </ModeToggle>
+          <ModeToggle 
+            $isActive={!isEditMode} 
+            onClick={() => setIsEditMode(false)}
+          >
+            Render
+          </ModeToggle>
+          
+          <label>
+            Size:
+            <FontSizeInput
+              type="number"
+              min="8"
+              max="72"
+              value={fontSize}
+              onChange={handleFontSizeChange}
+            />
+          </label>
+          <label>
+            Font:
+            <FontFamilySelect
+              value={fontFamily}
+              onChange={handleFontFamilyChange}
+            >
+              <option value="Arial, sans-serif">Arial</option>
+              <option value="'Times New Roman', serif">Times New Roman</option>
+              <option value="'Courier New', monospace">Courier New</option>
+              <option value="Georgia, serif">Georgia</option>
+              <option value="Verdana, sans-serif">Verdana</option>
+              <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
+            </FontFamilySelect>
+          </label>
+        </FontControls>
+      )}
       
       <TextEditor>
         {isEditMode ? (

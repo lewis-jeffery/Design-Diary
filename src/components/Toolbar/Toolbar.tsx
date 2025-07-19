@@ -101,15 +101,19 @@ const Toolbar: React.FC = () => {
   } = useStore();
 
   const handleAddCell = useCallback((type: 'code' | 'markdown' | 'raw', renderingHint?: string) => {
-    // Add cell at center of current view
-    const centerX = window.innerWidth / 2 - designDocument.canvas.pan.x;
-    const centerY = window.innerHeight / 2 - designDocument.canvas.pan.y;
+    // Add cell at a visible position on the first page
+    // Position it relative to the page, not the viewport
+    const pageStartX = 50; // Left margin of the page
+    const pageStartY = 50; // Top margin of the page
+    
+    // Add some offset so cells don't stack exactly on top of each other
+    const cellOffset = designDocument.cells.length * 20;
     
     addCell(type, {
-      x: centerX / designDocument.canvas.zoom,
-      y: centerY / designDocument.canvas.zoom,
+      x: pageStartX + 100 + cellOffset,
+      y: pageStartY + 100 + cellOffset,
     }, renderingHint);
-  }, [addCell, designDocument.canvas]);
+  }, [addCell, designDocument.canvas, designDocument.cells.length]);
 
   // Helper functions for creating specialized markdown cells
   const handleAddTextCell = useCallback(() => {

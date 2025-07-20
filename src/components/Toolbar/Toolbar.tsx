@@ -128,6 +128,7 @@ const Toolbar: React.FC = () => {
     saveJupyter,
     exportToJupyter,
     importFromJupyter,
+    registerWorkingDirectory,
     toggleSnapToGrid,
     updateCanvasZoom,
     updatePageSize,

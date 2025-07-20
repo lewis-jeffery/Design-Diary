@@ -48,12 +48,20 @@ export interface MarkdownCell extends BaseCell {
   content: string;
   // Design Diary specific properties for enhanced rendering
   renderingHints?: {
+    contentType?: 'text' | 'equation' | 'image' | 'graph';
     fontSize?: number;
     fontFamily?: string;
     // For images
     src?: string;
     alt?: string;
     originalSize?: Size;
+    // For equations
+    latex?: string;
+    displayMode?: boolean;
+    // For graphs
+    chartType?: string;
+    data?: any;
+    config?: any;
   };
 }
 

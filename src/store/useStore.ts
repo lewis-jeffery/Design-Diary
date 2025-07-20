@@ -49,6 +49,7 @@ interface StoreActions {
   // Jupyter compatibility actions
   exportToJupyter: () => { notebook: string; layout: string };
   importFromJupyter: (notebook: JupyterNotebook, layout: DesignDiaryLayout) => void;
+  registerWorkingDirectory: (documentId: string, workingDirectory: string) => Promise<void>;
   
   // Cell actions
   addCell: (type: Cell['type'], position: Position, renderingHint?: string) => void;
@@ -158,6 +159,32 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
     setTimeout(() => {
       get().clearSelection();
     }, 100);
+  },
+
+  registerWorkingDirectory: async (documentId: string, workingDirectory: string) => {
+    try {
+      const response = await fetch('/api/register-working-directory', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          documentId,
+          workingDirectory,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('Failed to register working directory:', error);
+        return;
+      }
+
+      const result = await response.json();
+      console.log('Working directory registered successfully:', result);
+    } catch (error) {
+      console.error('Error registering working directory:', error);
+    }
   },
 
   // Save/Save As actions

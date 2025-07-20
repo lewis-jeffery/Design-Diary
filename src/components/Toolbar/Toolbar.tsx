@@ -367,6 +367,16 @@ const Toolbar: React.FC = () => {
             console.log('Default layout created:', defaultLayout);
             console.log('Calling importFromJupyter with notebook and default layout...');
             importFromJupyter(notebook, defaultLayout);
+            
+            // Register the working directory for this document
+            const workingDirectory = selectedNotebookFile.webkitRelativePath 
+              ? selectedNotebookFile.webkitRelativePath.split('/').slice(0, -1).join('/')
+              : selectedNotebookFile.name.replace(/\.ipynb$/, '');
+            
+            if (workingDirectory) {
+              registerWorkingDirectory(defaultLayout.notebook_id, workingDirectory);
+            }
+            
             console.log('Import completed successfully');
           }
         } catch (error) {

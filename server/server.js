@@ -16,6 +16,7 @@ app.use(express.json());
 // Store for managing execution sessions and persistent Python processes
 const executionSessions = new Map();
 const persistentSessions = new Map(); // Map of document/notebook sessions to Python processes
+const notebookWorkingDirectories = new Map(); // Map of document IDs to their working directories
 
 // Create temp directory for Python files and outputs
 const tempDir = path.join(os.tmpdir(), 'design-diary-python');
@@ -29,6 +30,35 @@ if (!fs.existsSync(outputDir)) {
 
 // Serve static files from output directory
 app.use('/api/outputs', express.static(outputDir));
+
+// Serve static files from notebook working directories
+app.use('/api/notebook-files/:documentId/*', (req, res) => {
+  const { documentId } = req.params;
+  const filePath = req.params[0]; // Everything after documentId/
+  
+  const workingDir = notebookWorkingDirectories.get(documentId);
+  if (!workingDir) {
+    return res.status(404).json({ error: 'Notebook working directory not found' });
+  }
+  
+  const fullPath = path.join(workingDir, filePath);
+  
+  // Security check: ensure the requested file is within the working directory
+  const resolvedPath = path.resolve(fullPath);
+  const resolvedWorkingDir = path.resolve(workingDir);
+  
+  if (!resolvedPath.startsWith(resolvedWorkingDir)) {
+    return res.status(403).json({ error: 'Access denied: file outside working directory' });
+  }
+  
+  // Check if file exists
+  if (!fs.existsSync(resolvedPath)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+  
+  // Serve the file
+  res.sendFile(resolvedPath);
+});
 
 // Function to find conda/python executable and get shell environment
 function findPythonExecutable() {
@@ -509,6 +539,51 @@ app.get('/api/execution/:sessionId', (req, res) => {
   }
   
   res.json(result);
+});
+
+// Register notebook working directory endpoint
+app.post('/api/register-working-directory', (req, res) => {
+  const { documentId, workingDirectory } = req.body;
+  
+  if (!documentId || !workingDirectory) {
+    return res.status(400).json({ 
+      error: 'Missing required fields: documentId and workingDirectory' 
+    });
+  }
+  
+  // Validate that the directory exists
+  if (!fs.existsSync(workingDirectory)) {
+    return res.status(400).json({ 
+      error: 'Working directory does not exist' 
+    });
+  }
+  
+  // Store the working directory for this document
+  notebookWorkingDirectories.set(documentId, workingDirectory);
+  
+  console.log(`Registered working directory for document ${documentId}: ${workingDirectory}`);
+  
+  res.json({ 
+    success: true,
+    documentId,
+    workingDirectory,
+    message: 'Working directory registered successfully'
+  });
+});
+
+// Get registered working directory endpoint
+app.get('/api/working-directory/:documentId', (req, res) => {
+  const { documentId } = req.params;
+  const workingDir = notebookWorkingDirectories.get(documentId);
+  
+  if (!workingDir) {
+    return res.status(404).json({ error: 'Working directory not found for this document' });
+  }
+  
+  res.json({
+    documentId,
+    workingDirectory: workingDir
+  });
 });
 
 // Health check endpoint

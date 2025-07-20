@@ -3,9 +3,9 @@ import styled from 'styled-components';
 import { MarkdownCell } from '../../types';
 import { useStore } from '../../store/useStore';
 
-// Simple markdown renderer
-const renderMarkdown = (text: string): string => {
-  return text
+// Simple markdown renderer with image URL transformation
+const renderMarkdown = (text: string, documentId?: string): string => {
+  let rendered = text
     // Headers
     .replace(/^### (.*$)/gim, '<h3>$1</h3>')
     .replace(/^## (.*$)/gim, '<h2>$1</h2>')
@@ -28,6 +28,37 @@ const renderMarkdown = (text: string): string => {
     .replace(/^\d+\. (.*$)/gim, '<li>$1</li>')
     // Blockquotes
     .replace(/^> (.*$)/gim, '<blockquote>$1</blockquote>');
+
+  // Transform relative image URLs to use notebook files endpoint
+  if (documentId) {
+    // Handle HTML img tags with relative src
+    rendered = rendered.replace(
+      /<img([^>]*)\ssrc=["']([^"']+)["']([^>]*)>/gim,
+      (match, beforeSrc, src, afterSrc) => {
+        // Check if it's a relative URL (doesn't start with http:// or https:// or /)
+        if (!src.match(/^(https?:\/\/|\/)/)) {
+          const transformedSrc = `/api/notebook-files/${documentId}/${src}`;
+          return `<img${beforeSrc} src="${transformedSrc}"${afterSrc}>`;
+        }
+        return match;
+      }
+    );
+
+    // Handle markdown image syntax ![alt](src)
+    rendered = rendered.replace(
+      /!\[([^\]]*)\]\(([^)]+)\)/gim,
+      (match, alt, src) => {
+        // Check if it's a relative URL
+        if (!src.match(/^(https?:\/\/|\/)/)) {
+          const transformedSrc = `/api/notebook-files/${documentId}/${src}`;
+          return `<img src="${transformedSrc}" alt="${alt}">`;
+        }
+        return `<img src="${src}" alt="${alt}">`;
+      }
+    );
+  }
+
+  return rendered;
 };
 
 const TextCellContainer = styled.div`
@@ -133,7 +164,7 @@ interface TextCellProps {
 
 const TextCell: React.FC<TextCellProps> = ({ cell }) => {
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
-  const { updateCell, clearSelection } = useStore();
+  const { updateCell, clearSelection, document } = useStore();
   const [isEditMode, setIsEditMode] = useState(true);
 
   // Clear selection when text cell mounts to prevent auto-selection
@@ -242,7 +273,7 @@ const TextCell: React.FC<TextCellProps> = ({ cell }) => {
           <RenderedContent
             fontSize={fontSize}
             fontFamily={fontFamily}
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(cell.content || '') }}
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(cell.content || '', document.id) }}
           />
         )}
       </TextEditor>

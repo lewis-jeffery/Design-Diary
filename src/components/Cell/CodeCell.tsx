@@ -33,31 +33,6 @@ const CollapsedPreview = styled.div`
 `;
 
 
-const ExecuteButton = styled.button<{ $selected: boolean }>`
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  padding: 4px 8px;
-  background: #007bff;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-size: 11px;
-  cursor: pointer;
-  z-index: 10;
-  opacity: ${props => props.$selected ? 1 : 0};
-  pointer-events: ${props => props.$selected ? 'auto' : 'none'};
-  transition: opacity 0.2s;
-
-  &:hover {
-    background: #0056b3;
-  }
-
-  &:disabled {
-    background: #6c757d;
-    cursor: not-allowed;
-  }
-`;
 
 const CodeCellWrapper = styled.div`
   position: relative;
@@ -84,7 +59,7 @@ interface CodeCellProps {
 }
 
 const CodeCell: React.FC<CodeCellProps> = ({ cell }) => {
-  const { updateCell, executeCell, isExecuting, clearSelection } = useStore();
+  const { updateCell, clearSelection } = useStore();
 
   const handleCodeChange = useCallback((value: string | undefined) => {
     if (value !== undefined) {
@@ -100,10 +75,6 @@ const CodeCell: React.FC<CodeCellProps> = ({ cell }) => {
       });
     }
   }, [cell.id, updateCell]);
-
-  const handleExecute = useCallback(() => {
-    executeCell(cell.id);
-  }, [cell.id, executeCell]);
 
   if (cell.collapsed) {
     return (
@@ -125,14 +96,6 @@ const CodeCell: React.FC<CodeCellProps> = ({ cell }) => {
           In [{cell.executionCount}]
         </ExecutionNumber>
       )}
-      
-      <ExecuteButton 
-        $selected={cell.selected}
-        onClick={handleExecute}
-        disabled={isExecuting}
-      >
-        {isExecuting ? 'Running...' : 'Run'}
-      </ExecuteButton>
       
       <CodeCellContainer>
         <CodeEditor $collapsed={cell.collapsed}>

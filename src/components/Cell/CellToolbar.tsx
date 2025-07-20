@@ -5,11 +5,11 @@ import { useStore } from '../../store/useStore';
 
 const ToolbarContainer = styled.div<{ $selected: boolean }>`
   position: absolute;
-  top: -32px;
-  right: 0;
+  top: 4px;
+  right: 4px;
   display: flex;
   gap: 4px;
-  background: white;
+  background: rgba(255, 255, 255, 0.95);
   border: 1px solid #dee2e6;
   border-radius: 4px;
   padding: 4px;
@@ -18,6 +18,7 @@ const ToolbarContainer = styled.div<{ $selected: boolean }>`
   transition: opacity 0.2s;
   z-index: 1001;
   pointer-events: ${props => props.$selected ? 'auto' : 'none'};
+  backdrop-filter: blur(2px);
 `;
 
 const ToolbarButton = styled.button`

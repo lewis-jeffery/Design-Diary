@@ -23,7 +23,7 @@ const createInitialDocument = (): DesignDiaryDocument => ({
   modified: new Date().toISOString(),
   canvas: {
     zoom: 1.0,
-    pan: { x: 100, y: 100 }, // Start with pages visible in viewport
+    pan: { x: 0, y: 0 }, // Start with pages visible in viewport
     gridSize: 20,
     snapToGrid: true,
     pageSize: PAGE_SIZES.A4,

@@ -48,7 +48,7 @@ A modern, visual interface for creating and editing Jupyter notebooks with a can
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/your-username/design-diary.git
+   git clone https://github.com/lewis-jeffery/design-diary.git
    cd design-diary
    ```
 

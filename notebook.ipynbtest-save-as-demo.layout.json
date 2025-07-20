@@ -1,0 +1,23 @@
+{
+  "version": "1.0.0",
+  "notebook_id": "03fef3c4-a83d-4f82-80a2-9818450d5158",
+  "canvas": {
+    "zoom": 1,
+    "pan": {
+      "x": 0,
+      "y": 0
+    },
+    "gridSize": 20,
+    "snapToGrid": true,
+    "pageSize": {
+      "width": 794,
+      "height": 1123,
+      "name": "A4"
+    },
+    "orientation": "landscape",
+    "pages": 1,
+    "pageMargin": 50
+  },
+  "cells": {},
+  "execution_history": []
+}

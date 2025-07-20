@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { useStore, PAGE_SIZES } from '../../store/useStore';
 import { LayoutOptimizationService } from '../../services/layoutOptimizationService';
 import DirectoryBrowser from '../DirectoryBrowser/DirectoryBrowser';
+import SaveAsDialog from '../DirectoryBrowser/SaveAsDialog';
 
 const ToolbarContainer = styled.div`
   position: fixed;
@@ -120,6 +121,7 @@ const QuitButton = styled(ToolbarButton)`
 
 const Toolbar: React.FC = () => {
   const [showDirectoryBrowser, setShowDirectoryBrowser] = useState(false);
+  const [showSaveAsDialog, setShowSaveAsDialog] = useState(false);
   
   const {
     document: designDocument,
@@ -136,6 +138,7 @@ const Toolbar: React.FC = () => {
     updateCanvasZoom,
     updatePageSize,
     updatePageOrientation,
+    setSavedFileInfo,
   } = useStore();
 
   const handleAddCell = useCallback((type: 'code' | 'markdown' | 'raw', renderingHint?: string) => {
@@ -358,6 +361,53 @@ const Toolbar: React.FC = () => {
     createNewDocument();
   }, [designDocument.cells.length, createNewDocument]);
 
+  const handleSaveAs = useCallback(() => {
+    console.log('Save As button clicked - opening save dialog');
+    setShowSaveAsDialog(true);
+  }, []);
+
+  const handleSaveAsSelected = useCallback(async (filePath: string) => {
+    console.log('File path selected for save:', filePath);
+    
+    try {
+      const { notebook, layout } = exportToJupyter();
+      
+      // Call server to save the files
+      const response = await fetch('http://localhost:3001/api/save-notebook', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          notebookPath: filePath,
+          notebookContent: notebook,
+          layoutContent: layout,
+          silent: false
+        }),
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to save notebook');
+      }
+      
+      const result = await response.json();
+      console.log('Save result:', result);
+      
+      // Extract filename from path for saved file info
+      const fileName = filePath.split('/').pop()?.replace('.ipynb', '') || 'notebook';
+      
+      // Save the file info for future quick saves
+      setSavedFileInfo(fileName, filePath);
+      
+      alert(`Successfully saved:\n• ${result.notebookPath}\n• ${result.layoutPath}`);
+      
+    } catch (error) {
+      console.error('Save error:', error);
+      alert(`Save failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }, [exportToJupyter, setSavedFileInfo]);
+
   const handleQuit = useCallback(async () => {
     const hasUnsavedChanges = designDocument.cells.length > 0 && !savedFileInfo.baseFileName;
     
@@ -369,10 +419,9 @@ const Toolbar: React.FC = () => {
       
       if (shouldSave) {
         try {
-          // Auto-save the current document
-          saveAsJupyter();
-          // Give a moment for the save to complete
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          // Auto-save the current document using the new Save As dialog
+          setShowSaveAsDialog(true);
+          return; // Don't quit yet, let the user save first
         } catch (error) {
           console.error('Error saving before quit:', error);
           const forceQuit = window.confirm(
@@ -426,7 +475,7 @@ const Toolbar: React.FC = () => {
         `;
       }, 1000);
     }, 2000);
-  }, [designDocument.cells.length, savedFileInfo.baseFileName, saveAsJupyter]);
+  }, [designDocument.cells.length, savedFileInfo.baseFileName]);
 
   return (
     <>
@@ -438,7 +487,7 @@ const Toolbar: React.FC = () => {
         </ToolbarSection>
 
         <ToolbarSection>
-          <ToolbarButton onClick={saveAsJupyter}>
+          <ToolbarButton onClick={handleSaveAs}>
             📓 Save As...
           </ToolbarButton>
           <ToolbarButton 
@@ -541,6 +590,15 @@ const Toolbar: React.FC = () => {
         onClose={() => setShowDirectoryBrowser(false)}
         onSelectFile={handleFileSelected}
         title="Select Jupyter Notebook to Import"
+      />
+
+      <SaveAsDialog
+        isOpen={showSaveAsDialog}
+        onClose={() => setShowSaveAsDialog(false)}
+        onSave={handleSaveAsSelected}
+        defaultFilename={savedFileInfo.baseFileName ? `${savedFileInfo.baseFileName}.ipynb` : 'notebook.ipynb'}
+        defaultDirectory="/Users/lewis/opt/design-diary"
+        title="Save Notebook As..."
       />
     </>
   );

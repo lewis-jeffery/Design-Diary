@@ -655,11 +655,18 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
     const newExecutionCount = globalExecutionCount + 1;
     set({ isExecuting: true, globalExecutionCount: newExecutionCount });
 
-    // Clear any existing output cells for this code cell BEFORE execution
+    // Find any existing output cells for this code cell to preserve their positions
     const currentDocument = get().document;
     const existingOutputCells = currentDocument.cells.filter(c => 
       c.type === 'raw' && (c as any).sourceCodeCellId === cellId
     );
+    
+    // Store positions and sizes of existing output cells
+    const existingOutputPositions = existingOutputCells.map(cell => ({
+      position: cell.position,
+      size: cell.size,
+      outputType: (cell as any).outputType || 'text'
+    }));
     
     // Remove existing output cells
     if (existingOutputCells.length > 0) {
@@ -698,14 +705,22 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
       // Add text output if present
       if (hasTextOutput || hasErrorOutput) {
         const textOutputContent = hasErrorOutput ? result.stderr : result.stdout;
+        const outputType = hasErrorOutput ? 'error' : 'text';
+        
+        // Try to find existing position for this output type
+        const existingPosition = existingOutputPositions.find(pos => pos.outputType === outputType);
+        
         const textOutputCell: Cell = {
           id: uuidv4(),
           type: 'raw',
-          position: {
+          position: existingPosition ? existingPosition.position : {
             x: cell.position.x + cell.size.width + 20,
             y: cell.position.y + outputYOffset,
           },
-          size: { width: 400, height: Math.max(100, Math.min(300, textOutputContent.split('\n').length * 20 + 40)) },
+          size: existingPosition ? existingPosition.size : { 
+            width: 400, 
+            height: Math.max(100, Math.min(300, textOutputContent.split('\n').length * 20 + 40)) 
+          },
           executionOrder: null,
           collapsed: false,
           collapsedSize: { width: 400, height: 50 },
@@ -717,12 +732,16 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
         
         // Mark this as an output cell for this code cell
         (textOutputCell as any).sourceCodeCellId = cellId;
-        (textOutputCell as any).outputType = hasErrorOutput ? 'error' : 'text';
+        (textOutputCell as any).outputType = outputType;
         (textOutputCell as any).success = !hasErrorOutput;
         (textOutputCell as any).executionTime = new Date().toISOString();
         
         newCells.push(textOutputCell);
-        outputYOffset += textOutputCell.size.height + 20;
+        
+        // Only increment offset if we're using default positioning
+        if (!existingPosition) {
+          outputYOffset += textOutputCell.size.height + 20;
+        }
       }
 
       // Add rich outputs (images, plots, etc.)

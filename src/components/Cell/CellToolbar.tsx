@@ -94,7 +94,7 @@ const CellToolbar: React.FC<CellToolbarProps> = ({ cell }) => {
     e.stopPropagation();
     // Insert a new cell before this one (execute before)
     const newPosition = {
-      x: cell.position.x - 50,
+      x: Math.max(50, cell.position.x - 350), // Ensure it doesn't go off-screen
       y: cell.position.y,
     };
     addCell('code', newPosition);
@@ -106,6 +106,26 @@ const CellToolbar: React.FC<CellToolbarProps> = ({ cell }) => {
     const newPosition = {
       x: cell.position.x + cell.size.width + 50,
       y: cell.position.y,
+    };
+    addCell('code', newPosition);
+  }, [cell.position, cell.size, addCell]);
+
+  const handleInsertAbove = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    // Insert a new cell above this one
+    const newPosition = {
+      x: cell.position.x,
+      y: Math.max(50, cell.position.y - 250), // Ensure it doesn't go off-screen
+    };
+    addCell('code', newPosition);
+  }, [cell.position, addCell]);
+
+  const handleInsertBelow = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    // Insert a new cell below this one
+    const newPosition = {
+      x: cell.position.x,
+      y: cell.position.y + cell.size.height + 50,
     };
     addCell('code', newPosition);
   }, [cell.position, cell.size, addCell]);
@@ -124,6 +144,14 @@ const CellToolbar: React.FC<CellToolbarProps> = ({ cell }) => {
       
       <ToolbarButton onClick={handleInsertAfter} title="Insert After (Execute After)">
         +→
+      </ToolbarButton>
+      
+      <ToolbarButton onClick={handleInsertAbove} title="Insert Above">
+        ↑+
+      </ToolbarButton>
+      
+      <ToolbarButton onClick={handleInsertBelow} title="Insert Below">
+        +↓
       </ToolbarButton>
       
       <ToolbarButton onClick={handleCollapse} title={cell.collapsed ? "Expand" : "Collapse"}>

@@ -390,6 +390,24 @@ const Toolbar: React.FC = () => {
     input.click();
   }, [importFromJupyter]);
 
+  const handleNewDocument = useCallback(() => {
+    const hasContent = designDocument.cells.length > 0;
+    
+    if (hasContent) {
+      const shouldProceed = window.confirm(
+        '⚠️ Create New Document?\n\n' +
+        'This will permanently delete the current document and all its cells.\n\n' +
+        'Click "OK" to create a new document, or "Cancel" to keep working on the current document.'
+      );
+      
+      if (!shouldProceed) {
+        return;
+      }
+    }
+    
+    createNewDocument();
+  }, [designDocument.cells.length, createNewDocument]);
+
   const handleQuit = useCallback(async () => {
     const hasUnsavedChanges = designDocument.cells.length > 0 && !savedFileInfo.baseFileName;
     
@@ -463,7 +481,7 @@ const Toolbar: React.FC = () => {
   return (
     <ToolbarContainer>
       <ToolbarSection>
-        <PrimaryButton onClick={createNewDocument}>
+        <PrimaryButton onClick={handleNewDocument}>
           📄 New
         </PrimaryButton>
       </ToolbarSection>

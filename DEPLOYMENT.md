@@ -9,7 +9,7 @@ Perfect for testing and development:
 
 ```bash
 # Clone and setup
-git clone https://github.com/your-username/design-diary.git
+git clone https://github.com/lewis-jeffery/design-diary.git
 cd design-diary
 npm install
 cd server && npm install && cd ..

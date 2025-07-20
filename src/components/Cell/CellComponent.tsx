@@ -5,8 +5,6 @@ import { useStore } from '../../store/useStore';
 import CodeCell from './CodeCell';
 import TextCell from './TextCell';
 import ImageCell from './ImageCell';
-import EquationCell from './EquationCell';
-import GraphCell from './GraphCell';
 import OutputCell from './OutputCell';
 import CellToolbar from './CellToolbar';
 
@@ -304,22 +302,16 @@ const CellComponent: React.FC<CellComponentProps> = ({ cell }) => {
         case 'code':
           return <CodeCell cell={cell} />;
         case 'markdown':
-          // Safely access renderingHints
-          const markdownCell = cell as any; // We know this is a MarkdownCell
+          // Simplified markdown cell handling - check if it's an image cell
+          const markdownCell = cell as any;
           const hints = markdownCell.renderingHints || {};
-          const contentType = hints.contentType || 'text';
           
-          switch (contentType) {
-            case 'text':
-              return <TextCell cell={markdownCell} />;
-            case 'equation':
-              return <EquationCell cell={markdownCell} />;
-            case 'image':
-              return <ImageCell cell={markdownCell} />;
-            case 'graph':
-              return <GraphCell cell={markdownCell} />;
-            default:
-              return <TextCell cell={markdownCell} />;
+          if (hints.src) {
+            // This is an image cell
+            return <ImageCell cell={markdownCell} />;
+          } else {
+            // This is a text/markdown cell (handles LaTeX equations automatically)
+            return <TextCell cell={markdownCell} />;
           }
         case 'raw':
           return <OutputCell cell={cell as any} selected={cell.selected} />;

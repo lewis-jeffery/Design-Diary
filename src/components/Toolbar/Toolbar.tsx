@@ -154,16 +154,8 @@ const Toolbar: React.FC = () => {
     handleAddCell('markdown', 'text');
   }, [handleAddCell]);
 
-  const handleAddEquationCell = useCallback(() => {
-    handleAddCell('markdown', 'equation');
-  }, [handleAddCell]);
-
   const handleAddImageCell = useCallback(() => {
     handleAddCell('markdown', 'image');
-  }, [handleAddCell]);
-
-  const handleAddGraphCell = useCallback(() => {
-    handleAddCell('markdown', 'graph');
   }, [handleAddCell]);
 
 
@@ -516,12 +508,6 @@ const Toolbar: React.FC = () => {
         </ToolbarButton>
         <ToolbarButton onClick={handleAddImageCell}>
           🖼️ Image
-        </ToolbarButton>
-        <ToolbarButton onClick={handleAddEquationCell}>
-          🧮 Equation
-        </ToolbarButton>
-        <ToolbarButton onClick={handleAddGraphCell}>
-          📊 Graph
         </ToolbarButton>
       </ToolbarSection>
 

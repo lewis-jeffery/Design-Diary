@@ -48,20 +48,12 @@ export interface MarkdownCell extends BaseCell {
   content: string;
   // Design Diary specific properties for enhanced rendering
   renderingHints?: {
-    contentType?: 'text' | 'equation' | 'image' | 'graph';
     fontSize?: number;
     fontFamily?: string;
-    // For equations
-    latex?: string;
-    displayMode?: boolean;
     // For images
     src?: string;
     alt?: string;
     originalSize?: Size;
-    // For graphs
-    chartType?: 'line' | 'bar' | 'scatter' | 'pie';
-    data?: any;
-    config?: any;
   };
 }
 
@@ -88,7 +80,6 @@ export type Cell = CodeCell | MarkdownCell | RawCell;
 // Legacy types for backward compatibility during transition
 export interface TextCell extends MarkdownCell {
   renderingHints: {
-    contentType: 'text';
     fontSize: number;
     fontFamily: string;
   };
@@ -96,27 +87,9 @@ export interface TextCell extends MarkdownCell {
 
 export interface ImageCell extends MarkdownCell {
   renderingHints: {
-    contentType: 'image';
     src: string;
     alt: string;
     originalSize: Size;
-  };
-}
-
-export interface EquationCell extends MarkdownCell {
-  renderingHints: {
-    contentType: 'equation';
-    latex: string;
-    displayMode: boolean;
-  };
-}
-
-export interface GraphCell extends MarkdownCell {
-  renderingHints: {
-    contentType: 'graph';
-    chartType: 'line' | 'bar' | 'scatter' | 'pie';
-    data: any;
-    config: any;
   };
 }
 

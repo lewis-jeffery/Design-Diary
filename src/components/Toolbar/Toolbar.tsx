@@ -1,7 +1,8 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import styled from 'styled-components';
 import { useStore, PAGE_SIZES } from '../../store/useStore';
 import { LayoutOptimizationService } from '../../services/layoutOptimizationService';
+import DirectoryBrowser from '../DirectoryBrowser/DirectoryBrowser';
 
 const ToolbarContainer = styled.div`
   position: fixed;
@@ -118,6 +119,8 @@ const QuitButton = styled(ToolbarButton)`
 `;
 
 const Toolbar: React.FC = () => {
+  const [showDirectoryBrowser, setShowDirectoryBrowser] = useState(false);
+  
   const {
     document: designDocument,
     savedFileInfo,
@@ -202,196 +205,140 @@ const Toolbar: React.FC = () => {
   }, [exportToJupyter, designDocument.name]);
 
   const handleImportFromJupyter = useCallback(() => {
-    console.log('Import button clicked - creating file input');
-    
-    const input = window.document.createElement('input');
-    input.type = 'file';
-    input.accept = '.ipynb,.json';
-    input.multiple = true;
-    
-    input.onchange = (event) => {
-      console.log('File input changed');
-      const files = (event.target as HTMLInputElement).files;
-      console.log('Selected files:', files);
-      
-      if (!files || files.length === 0) {
-        console.log('No files selected');
-        return;
-      }
+    console.log('Import button clicked - opening directory browser');
+    setShowDirectoryBrowser(true);
+  }, []);
 
-      let notebookFile: File | null = null;
-      let layoutFile: File | null = null;
-
-      // Identify notebook and layout files
-      Array.from(files).forEach(file => {
-        console.log('Processing file:', file.name);
-        if (file.name.endsWith('.ipynb')) {
-          notebookFile = file;
-          console.log('Found notebook file:', file.name);
-        } else if (file.name.includes('.layout.json')) {
-          layoutFile = file;
-          console.log('Found layout file:', file.name);
-        }
+  const handleFileSelected = useCallback(async (notebookPath: string) => {
+    console.log('File selected for import:', notebookPath);
+    
+    try {
+      // Call server to import the notebook
+      const response = await fetch('http://localhost:3001/api/import-notebook', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          notebookPath: notebookPath.trim()
+        }),
       });
-
-      if (!notebookFile) {
-        console.error('No .ipynb file found');
-        alert('Please select a .ipynb file');
-        return;
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to import notebook');
       }
-
-      // TypeScript assertion: we know notebookFile is not null here
-      const selectedNotebookFile = notebookFile as File;
-      console.log('Reading notebook file:', selectedNotebookFile.name);
-      const notebookReader = new FileReader();
       
-      notebookReader.onerror = (error) => {
-        console.error('Error reading notebook file:', error);
-        alert('Error reading notebook file');
-      };
+      const result = await response.json();
+      console.log('Server import result:', result);
       
-      notebookReader.onload = (e) => {
-        try {
-          console.log('Notebook file loaded, parsing JSON...');
-          const notebookContent = e.target?.result as string;
-          console.log('Notebook content length:', notebookContent.length);
+      const { notebook, layout, documentId, hasLayout } = result;
+      
+      // Validate notebook structure
+      if (!notebook.cells || !Array.isArray(notebook.cells)) {
+        throw new Error('Invalid notebook format: missing or invalid cells array');
+      }
+      
+      if (hasLayout && layout) {
+        console.log('Importing with existing layout...');
+        importFromJupyter(notebook, layout);
+      } else {
+        console.log('Creating default layout...');
+        // Create default layout
+        const defaultLayout: any = {
+          version: '1.0.0',
+          notebook_id: documentId,
+          canvas: {
+            zoom: 1.0,
+            pan: { x: 0, y: 0 },
+            gridSize: 20,
+            snapToGrid: true,
+            pageSize: { width: 794, height: 1123, name: 'A4' },
+            orientation: 'landscape',
+            pages: 1,
+            pageMargin: 50,
+          },
+          cells: {},
+          execution_history: []
+        };
+        
+        // Generate optimized layout for cells
+        const layoutConstraints = {
+          pageWidth: defaultLayout.canvas.pageSize.width,
+          pageHeight: defaultLayout.canvas.pageSize.height,
+          margin: defaultLayout.canvas.pageMargin,
+          cellSpacing: 20,
+          maxPages: 10
+        };
+        
+        const optimizedCellLayouts = LayoutOptimizationService.generateOptimizedLayout(
+          notebook.cells,
+          layoutConstraints
+        );
+        
+        // Update cell IDs to match notebook cells
+        notebook.cells.forEach((cell: any, index: number) => {
+          const cellId = cell.id || `cell-${index}-${Date.now()}`;
+          const optimizedLayout = optimizedCellLayouts[cell.id || `cell-${index}`];
           
-          const notebook = JSON.parse(notebookContent);
-          console.log('Notebook parsed successfully:', notebook);
-          
-          // Validate notebook structure
-          if (!notebook.cells || !Array.isArray(notebook.cells)) {
-            throw new Error('Invalid notebook format: missing or invalid cells array');
-          }
-          
-          if (layoutFile) {
-            console.log('Reading layout file:', layoutFile.name);
-            // Read layout file if provided
-            const layoutReader = new FileReader();
-            
-            layoutReader.onerror = (error) => {
-              console.error('Error reading layout file:', error);
-              alert('Error reading layout file');
+          if (optimizedLayout) {
+            defaultLayout.cells[cellId] = {
+              ...optimizedLayout,
+              cell_type: cell.cell_type,
+              rendering_hints: {}
             };
-            
-            layoutReader.onload = (e) => {
-              try {
-                console.log('Layout file loaded, parsing JSON...');
-                const layoutContent = e.target?.result as string;
-                const layout = JSON.parse(layoutContent);
-                console.log('Layout parsed successfully:', layout);
-                
-                console.log('Calling importFromJupyter with notebook and layout...');
-                importFromJupyter(notebook, layout);
-                console.log('Import completed successfully');
-              } catch (error) {
-                console.error('Error parsing layout file:', error);
-                alert(`Error parsing layout file: ${error instanceof Error ? error.message : 'Unknown error'}`);
-              }
-            };
-            layoutReader.readAsText(layoutFile);
           } else {
-            console.log('No layout file provided, creating default layout...');
-            // Create default layout if no layout file provided
-            const defaultLayout: any = {
-              version: '1.0.0',
-              notebook_id: notebook.metadata?.design_diary?.id || `imported-notebook-${Date.now()}`,
-              canvas: {
-                zoom: 1.0,
-                pan: { x: 0, y: 0 },
-                gridSize: 20,
-                snapToGrid: true,
-                pageSize: { width: 794, height: 1123, name: 'A4' },
-                orientation: 'landscape',
-                pages: 1,
-                pageMargin: 50,
-              },
-              cells: {},
-              execution_history: []
+            defaultLayout.cells[cellId] = {
+              position: { x: 100, y: 100 + index * 250 },
+              size: { width: 400, height: 200 },
+              collapsed_size: { width: 400, height: 50 },
+              z_index: index,
+              cell_type: cell.cell_type,
+              rendering_hints: {}
             };
-            
-            // Generate optimized layout for cells
-            console.log('Generating optimized layout for', notebook.cells.length, 'cells');
-            
-            const layoutConstraints = {
-              pageWidth: defaultLayout.canvas.pageSize.width,
-              pageHeight: defaultLayout.canvas.pageSize.height,
-              margin: defaultLayout.canvas.pageMargin,
-              cellSpacing: 20,
-              maxPages: 10 // Allow up to 10 pages for large notebooks
-            };
-            
-            console.log('Layout constraints:', layoutConstraints);
-            
-            // Use the optimization service to generate intelligent layout
-            const optimizedCellLayouts = LayoutOptimizationService.generateOptimizedLayout(
-              notebook.cells,
-              layoutConstraints
-            );
-            
-            // Update cell IDs to match notebook cells
-            notebook.cells.forEach((cell: any, index: number) => {
-              const cellId = cell.id || `cell-${index}-${Date.now()}`;
-              const optimizedLayout = optimizedCellLayouts[cell.id || `cell-${index}`];
-              
-              if (optimizedLayout) {
-                defaultLayout.cells[cellId] = {
-                  ...optimizedLayout,
-                  cell_type: cell.cell_type,
-                  rendering_hints: {}
-                };
-              } else {
-                // Fallback for any cells not handled by optimization
-                defaultLayout.cells[cellId] = {
-                  position: { x: 100, y: 100 + index * 250 },
-                  size: { width: 400, height: 200 },
-                  collapsed_size: { width: 400, height: 50 },
-                  z_index: index,
-                  cell_type: cell.cell_type,
-                  rendering_hints: {}
-                };
-              }
-              
-              console.log(`Generated layout for cell ${cellId}:`, defaultLayout.cells[cellId]);
-            });
-            
-            // Calculate and set the number of pages needed
-            const pagesNeeded = Math.max(1, Math.ceil(
-              Object.values(defaultLayout.cells).reduce((maxY: number, cell: any) => 
-                Math.max(maxY, cell.position.y + cell.size.height), 0
-              ) / defaultLayout.canvas.pageSize.height
-            ));
-            
-            defaultLayout.canvas.pages = pagesNeeded;
-            console.log(`Optimized layout created with ${pagesNeeded} pages for ${notebook.cells.length} cells`);
-            
-            console.log('Default layout created:', defaultLayout);
-            console.log('Calling importFromJupyter with notebook and default layout...');
-            importFromJupyter(notebook, defaultLayout);
-            
-            // Register the working directory for this document
-            const workingDirectory = selectedNotebookFile.webkitRelativePath 
-              ? selectedNotebookFile.webkitRelativePath.split('/').slice(0, -1).join('/')
-              : selectedNotebookFile.name.replace(/\.ipynb$/, '');
-            
-            if (workingDirectory) {
-              registerWorkingDirectory(defaultLayout.notebook_id, workingDirectory);
-            }
-            
-            console.log('Import completed successfully');
           }
-        } catch (error) {
-          console.error('Error parsing notebook file:', error);
-          alert(`Error parsing notebook file: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
-      };
+        });
+        
+        // Calculate pages needed
+        const pagesNeeded = Math.max(1, Math.ceil(
+          Object.values(defaultLayout.cells).reduce((maxY: number, cell: any) => 
+            Math.max(maxY, cell.position.y + cell.size.height), 0
+          ) / defaultLayout.canvas.pageSize.height
+        ));
+        
+        defaultLayout.canvas.pages = pagesNeeded;
+        
+        importFromJupyter(notebook, defaultLayout);
+      }
       
-      notebookReader.readAsText(selectedNotebookFile);
-    };
-    
-    console.log('Triggering file input click...');
-    input.click();
+      console.log('Import completed successfully');
+      
+    } catch (error) {
+      console.error('Error during import:', error);
+      alert(`Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }, [importFromJupyter]);
+
+  // Helper function to get directory path from directory handle
+  const getDirectoryPath = async (directoryHandle: any): Promise<string | null> => {
+    try {
+      // This is a workaround since we can't directly get the path from FileSystemDirectoryHandle
+      // We'll try to resolve it through the handle's name and parent references
+      
+      // For now, we'll ask the user to confirm the path since we can't reliably get it
+      const confirmedPath = prompt(
+        `Directory selected: "${directoryHandle.name}"\n\n` +
+        `Please enter the full path to this directory for image loading:\n` +
+        `Example: /Users/username/Documents/${directoryHandle.name}\n\n` +
+        `Leave empty to skip image loading:`
+      );
+      
+      return confirmedPath?.trim() || null;
+    } catch (error) {
+      console.error('Error getting directory path:', error);
+      return null;
+    }
+  };
 
   const handleNewDocument = useCallback(() => {
     const hasContent = designDocument.cells.length > 0;
@@ -482,111 +429,120 @@ const Toolbar: React.FC = () => {
   }, [designDocument.cells.length, savedFileInfo.baseFileName, saveAsJupyter]);
 
   return (
-    <ToolbarContainer>
-      <ToolbarSection>
-        <PrimaryButton onClick={handleNewDocument}>
-          📄 New
-        </PrimaryButton>
-      </ToolbarSection>
+    <>
+      <ToolbarContainer>
+        <ToolbarSection>
+          <PrimaryButton onClick={handleNewDocument}>
+            📄 New
+          </PrimaryButton>
+        </ToolbarSection>
 
-      <ToolbarSection>
-        <ToolbarButton onClick={saveAsJupyter}>
-          📓 Save As...
-        </ToolbarButton>
-        <ToolbarButton 
-          onClick={saveJupyter}
-          style={{
-            opacity: savedFileInfo.baseFileName ? 1 : 0.5,
-            cursor: savedFileInfo.baseFileName ? 'pointer' : 'not-allowed',
-            background: savedFileInfo.baseFileName ? '#e8f5e8' : 'white',
-            borderColor: savedFileInfo.baseFileName ? '#28a745' : '#dee2e6'
-          }}
-          title={savedFileInfo.baseFileName ? `Quick save as ${savedFileInfo.baseFileName}.ipynb and ${savedFileInfo.baseFileName}.layout.json` : 'Use Save As... first to enable quick save'}
-        >
-          💾 {savedFileInfo.baseFileName ? `Save (${savedFileInfo.baseFileName})` : 'Save'}
-        </ToolbarButton>
-        <ToolbarButton onClick={handleImportFromJupyter}>
-          📥 Import .ipynb
-        </ToolbarButton>
-      </ToolbarSection>
+        <ToolbarSection>
+          <ToolbarButton onClick={saveAsJupyter}>
+            📓 Save As...
+          </ToolbarButton>
+          <ToolbarButton 
+            onClick={saveJupyter}
+            style={{
+              opacity: savedFileInfo.baseFileName ? 1 : 0.5,
+              cursor: savedFileInfo.baseFileName ? 'pointer' : 'not-allowed',
+              background: savedFileInfo.baseFileName ? '#e8f5e8' : 'white',
+              borderColor: savedFileInfo.baseFileName ? '#28a745' : '#dee2e6'
+            }}
+            title={savedFileInfo.baseFileName ? `Quick save as ${savedFileInfo.baseFileName}.ipynb and ${savedFileInfo.baseFileName}.layout.json` : 'Use Save As... first to enable quick save'}
+          >
+            💾 {savedFileInfo.baseFileName ? `Save (${savedFileInfo.baseFileName})` : 'Save'}
+          </ToolbarButton>
+          <ToolbarButton onClick={handleImportFromJupyter}>
+            📥 Import .ipynb
+          </ToolbarButton>
+        </ToolbarSection>
 
-      <ToolbarSection>
-        <ToolbarButton onClick={() => handleAddCell('code')}>
-          📝 Code
-        </ToolbarButton>
-        <ToolbarButton onClick={handleAddTextCell}>
-          📄 Text
-        </ToolbarButton>
-        <ToolbarButton onClick={handleAddImageCell}>
-          🖼️ Image
-        </ToolbarButton>
-      </ToolbarSection>
+        <ToolbarSection>
+          <ToolbarButton onClick={() => handleAddCell('code')}>
+            📝 Code
+          </ToolbarButton>
+          <ToolbarButton onClick={handleAddTextCell}>
+            📄 Text
+          </ToolbarButton>
+          <ToolbarButton onClick={handleAddImageCell}>
+            🖼️ Image
+          </ToolbarButton>
+        </ToolbarSection>
 
-      <ToolbarSection>
-        <ToolbarButton onClick={handleZoomOut}>
-          🔍-
-        </ToolbarButton>
-        <ToolbarButton onClick={handleZoomReset}>
-          {Math.round(designDocument.canvas.zoom * 100)}%
-        </ToolbarButton>
-        <ToolbarButton onClick={handleZoomIn}>
-          🔍+
-        </ToolbarButton>
-      </ToolbarSection>
+        <ToolbarSection>
+          <ToolbarButton onClick={handleZoomOut}>
+            🔍-
+          </ToolbarButton>
+          <ToolbarButton onClick={handleZoomReset}>
+            {Math.round(designDocument.canvas.zoom * 100)}%
+          </ToolbarButton>
+          <ToolbarButton onClick={handleZoomIn}>
+            🔍+
+          </ToolbarButton>
+        </ToolbarSection>
 
-      <ToolbarSection>
-        <ToolbarButton 
-          onClick={toggleSnapToGrid}
-          style={{ 
-            background: designDocument.canvas.snapToGrid ? '#e3f2fd' : 'white',
-            color: designDocument.canvas.snapToGrid ? '#1976d2' : '#495057'
-          }}
-        >
-          📐 Grid
-        </ToolbarButton>
-      </ToolbarSection>
+        <ToolbarSection>
+          <ToolbarButton 
+            onClick={toggleSnapToGrid}
+            style={{ 
+              background: designDocument.canvas.snapToGrid ? '#e3f2fd' : 'white',
+              color: designDocument.canvas.snapToGrid ? '#1976d2' : '#495057'
+            }}
+          >
+            📐 Grid
+          </ToolbarButton>
+        </ToolbarSection>
 
-      <ToolbarSection>
-        <select
-          value={designDocument.canvas.pageSize.name}
-          onChange={(e) => updatePageSize(PAGE_SIZES[e.target.value])}
-          style={{
-            padding: '6px 8px',
-            border: '1px solid #dee2e6',
-            borderRadius: '4px',
-            fontSize: '12px',
-            background: 'white',
-            cursor: 'pointer'
-          }}
-        >
-          {Object.entries(PAGE_SIZES).map(([key, pageSize]) => (
-            <option key={key} value={key}>
-              {pageSize.name}
-            </option>
-          ))}
-        </select>
-        <ToolbarButton 
-          onClick={() => updatePageOrientation(designDocument.canvas.orientation === 'portrait' ? 'landscape' : 'portrait')}
-          style={{ 
-            background: designDocument.canvas.orientation === 'landscape' ? '#fff3cd' : '#e3f2fd',
-            color: designDocument.canvas.orientation === 'landscape' ? '#856404' : '#1976d2'
-          }}
-        >
-          {designDocument.canvas.orientation === 'landscape' ? '📄' : '📋'} {designDocument.canvas.orientation}
-        </ToolbarButton>
-      </ToolbarSection>
+        <ToolbarSection>
+          <select
+            value={designDocument.canvas.pageSize.name}
+            onChange={(e) => updatePageSize(PAGE_SIZES[e.target.value])}
+            style={{
+              padding: '6px 8px',
+              border: '1px solid #dee2e6',
+              borderRadius: '4px',
+              fontSize: '12px',
+              background: 'white',
+              cursor: 'pointer'
+            }}
+          >
+            {Object.entries(PAGE_SIZES).map(([key, pageSize]) => (
+              <option key={key} value={key}>
+                {pageSize.name}
+              </option>
+            ))}
+          </select>
+          <ToolbarButton 
+            onClick={() => updatePageOrientation(designDocument.canvas.orientation === 'portrait' ? 'landscape' : 'portrait')}
+            style={{ 
+              background: designDocument.canvas.orientation === 'landscape' ? '#fff3cd' : '#e3f2fd',
+              color: designDocument.canvas.orientation === 'landscape' ? '#856404' : '#1976d2'
+            }}
+          >
+            {designDocument.canvas.orientation === 'landscape' ? '📄' : '📋'} {designDocument.canvas.orientation}
+          </ToolbarButton>
+        </ToolbarSection>
 
-      <DocumentInfo>
-        <DocumentName>{designDocument.name}</DocumentName>
-        <ZoomInfo>{designDocument.cells.length} cells • {designDocument.canvas.pageSize.name} {designDocument.canvas.orientation}</ZoomInfo>
-      </DocumentInfo>
+        <DocumentInfo>
+          <DocumentName>{designDocument.name}</DocumentName>
+          <ZoomInfo>{designDocument.cells.length} cells • {designDocument.canvas.pageSize.name} {designDocument.canvas.orientation}</ZoomInfo>
+        </DocumentInfo>
 
-      <ToolbarSection>
-        <QuitButton onClick={handleQuit}>
-          🚪 Quit
-        </QuitButton>
-      </ToolbarSection>
-    </ToolbarContainer>
+        <ToolbarSection>
+          <QuitButton onClick={handleQuit}>
+            🚪 Quit
+          </QuitButton>
+        </ToolbarSection>
+      </ToolbarContainer>
+
+      <DirectoryBrowser
+        isOpen={showDirectoryBrowser}
+        onClose={() => setShowDirectoryBrowser(false)}
+        onSelectFile={handleFileSelected}
+        title="Select Jupyter Notebook to Import"
+      />
+    </>
   );
 };
 

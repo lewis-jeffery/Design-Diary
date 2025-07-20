@@ -41,6 +41,16 @@ app.use('/api/notebook-files/:documentId/*', (req, res) => {
     return res.status(404).json({ error: 'Notebook working directory not found' });
   }
   
+  // Check if this is a directory handle placeholder
+  if (workingDir.startsWith('__DIRECTORY_HANDLE__')) {
+    // This means the frontend will handle file serving via File System Access API
+    return res.status(200).json({ 
+      useDirectoryHandle: true,
+      documentId: documentId,
+      filePath: filePath
+    });
+  }
+  
   const fullPath = path.join(workingDir, filePath);
   
   // Security check: ensure the requested file is within the working directory
@@ -541,7 +551,296 @@ app.get('/api/execution/:sessionId', (req, res) => {
   res.json(result);
 });
 
-// Register notebook working directory endpoint
+// Server-side file operations endpoints
+
+// List files in a directory
+app.post('/api/list-directory', (req, res) => {
+  const { directoryPath } = req.body;
+  
+  if (!directoryPath) {
+    return res.status(400).json({ error: 'Missing directoryPath' });
+  }
+  
+  try {
+    let resolvedPath = directoryPath;
+    
+    // Check if the path is a symbolic link and resolve it
+    if (fs.existsSync(directoryPath)) {
+      const stats = fs.lstatSync(directoryPath);
+      if (stats.isSymbolicLink()) {
+        resolvedPath = fs.readlinkSync(directoryPath);
+        // Handle relative symbolic links
+        if (!path.isAbsolute(resolvedPath)) {
+          resolvedPath = path.resolve(path.dirname(directoryPath), resolvedPath);
+        }
+        console.log(`Resolved symbolic link: ${directoryPath} -> ${resolvedPath}`);
+      }
+    }
+    
+    if (!fs.existsSync(resolvedPath)) {
+      return res.status(404).json({ error: 'Directory does not exist' });
+    }
+    
+    // Check if we have read permissions
+    try {
+      fs.accessSync(resolvedPath, fs.constants.R_OK);
+    } catch (permError) {
+      if (permError.code === 'EPERM' || permError.code === 'EACCES') {
+        // Provide specific guidance for CloudStorage/Dropbox access
+        let errorMessage = 'Permission denied: Cannot access this directory';
+        let helpMessage = '';
+        
+        if (resolvedPath.includes('CloudStorage') || directoryPath.includes('Dropbox')) {
+          helpMessage = 'This appears to be a Dropbox/CloudStorage directory. You may need to grant Full Disk Access to Terminal or VS Code in System Preferences → Security & Privacy → Privacy → Full Disk Access.';
+        }
+        
+        return res.status(403).json({ 
+          error: errorMessage,
+          help: helpMessage,
+          code: permError.code,
+          path: directoryPath,
+          resolvedPath: resolvedPath !== directoryPath ? resolvedPath : undefined
+        });
+      }
+      throw permError;
+    }
+    
+    const files = fs.readdirSync(resolvedPath);
+    const fileList = [];
+    
+    // Process each file individually to handle permission errors gracefully
+    for (const filename of files) {
+      try {
+        const filePath = path.join(resolvedPath, filename);
+        const stats = fs.statSync(filePath);
+        fileList.push({
+          name: filename,
+          path: filePath,
+          isDirectory: stats.isDirectory(),
+          size: stats.size,
+          modified: stats.mtime
+        });
+      } catch (fileError) {
+        // Skip files we can't access but log the issue
+        console.warn(`Skipping file ${filename}: ${fileError.message}`);
+        // Optionally include inaccessible files with limited info
+        if (fileError.code !== 'EPERM' && fileError.code !== 'EACCES') {
+          fileList.push({
+            name: filename,
+            path: path.join(resolvedPath, filename),
+            isDirectory: false,
+            size: 0,
+            modified: new Date(),
+            error: 'Access denied'
+          });
+        }
+      }
+    }
+    
+    res.json({ 
+      files: fileList, 
+      directoryPath: resolvedPath,
+      originalPath: directoryPath !== resolvedPath ? directoryPath : undefined
+    });
+  } catch (error) {
+    // Handle different types of errors with appropriate status codes
+    if (error.code === 'EPERM' || error.code === 'EACCES') {
+      let errorMessage = 'Permission denied: Cannot access this directory';
+      let helpMessage = '';
+      
+      if (directoryPath.includes('CloudStorage') || directoryPath.includes('Dropbox')) {
+        helpMessage = 'This appears to be a Dropbox/CloudStorage directory. You may need to grant Full Disk Access to Terminal or VS Code in System Preferences → Security & Privacy → Privacy → Full Disk Access.';
+      }
+      
+      res.status(403).json({ 
+        error: errorMessage,
+        help: helpMessage,
+        code: error.code,
+        path: directoryPath
+      });
+    } else if (error.code === 'ENOENT') {
+      res.status(404).json({ 
+        error: 'Directory not found',
+        code: error.code,
+        path: directoryPath
+      });
+    } else if (error.code === 'ENOTDIR') {
+      res.status(400).json({ 
+        error: 'Path is not a directory',
+        code: error.code,
+        path: directoryPath
+      });
+    } else {
+      res.status(500).json({ 
+        error: `Failed to read directory: ${error.message}`,
+        code: error.code || 'UNKNOWN',
+        path: directoryPath
+      });
+    }
+  }
+});
+
+// Read a file from the server filesystem
+app.post('/api/read-file', (req, res) => {
+  const { filePath } = req.body;
+  
+  if (!filePath) {
+    return res.status(400).json({ error: 'Missing filePath' });
+  }
+  
+  try {
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'File does not exist' });
+    }
+    
+    const content = fs.readFileSync(filePath, 'utf8');
+    const stats = fs.statSync(filePath);
+    
+    res.json({ 
+      content,
+      filePath,
+      size: stats.size,
+      modified: stats.mtime
+    });
+  } catch (error) {
+    res.status(500).json({ error: `Failed to read file: ${error.message}` });
+  }
+});
+
+// Write a file to the server filesystem
+app.post('/api/write-file', (req, res) => {
+  const { filePath, content } = req.body;
+  
+  if (!filePath || content === undefined) {
+    return res.status(400).json({ error: 'Missing filePath or content' });
+  }
+  
+  try {
+    // Ensure directory exists
+    const directory = path.dirname(filePath);
+    if (!fs.existsSync(directory)) {
+      fs.mkdirSync(directory, { recursive: true });
+    }
+    
+    fs.writeFileSync(filePath, content, 'utf8');
+    const stats = fs.statSync(filePath);
+    
+    console.log(`File written: ${filePath} (${stats.size} bytes)`);
+    
+    res.json({ 
+      success: true,
+      filePath,
+      size: stats.size,
+      modified: stats.mtime
+    });
+  } catch (error) {
+    res.status(500).json({ error: `Failed to write file: ${error.message}` });
+  }
+});
+
+// Import notebook from server filesystem
+app.post('/api/import-notebook', (req, res) => {
+  const { notebookPath } = req.body;
+  
+  if (!notebookPath) {
+    return res.status(400).json({ error: 'Missing notebookPath' });
+  }
+  
+  try {
+    if (!fs.existsSync(notebookPath)) {
+      return res.status(404).json({ error: 'Notebook file does not exist' });
+    }
+    
+    // Read the notebook file
+    const notebookContent = fs.readFileSync(notebookPath, 'utf8');
+    const notebook = JSON.parse(notebookContent);
+    
+    // Get the directory containing the notebook
+    const notebookDirectory = path.dirname(notebookPath);
+    const notebookFilename = path.basename(notebookPath, '.ipynb');
+    
+    // Look for a matching layout file
+    const layoutPath = path.join(notebookDirectory, `${notebookFilename}.layout.json`);
+    let layout = null;
+    
+    if (fs.existsSync(layoutPath)) {
+      console.log(`Found layout file: ${layoutPath}`);
+      const layoutContent = fs.readFileSync(layoutPath, 'utf8');
+      layout = JSON.parse(layoutContent);
+    }
+    
+    // Register the notebook directory for image serving
+    const documentId = notebook.metadata?.design_diary?.id || `imported-notebook-${Date.now()}`;
+    notebookWorkingDirectories.set(documentId, notebookDirectory);
+    
+    console.log(`Imported notebook: ${notebookPath}`);
+    console.log(`Registered working directory: ${notebookDirectory}`);
+    
+    res.json({
+      notebook,
+      layout,
+      documentId,
+      notebookPath,
+      notebookDirectory,
+      hasLayout: layout !== null
+    });
+    
+  } catch (error) {
+    res.status(500).json({ error: `Failed to import notebook: ${error.message}` });
+  }
+});
+
+// Save notebook and layout to server filesystem
+app.post('/api/save-notebook', (req, res) => {
+  const { notebookPath, notebookContent, layoutContent, silent = false } = req.body;
+  
+  if (!notebookPath || !notebookContent) {
+    return res.status(400).json({ error: 'Missing notebookPath or notebookContent' });
+  }
+  
+  try {
+    // Ensure directory exists
+    const directory = path.dirname(notebookPath);
+    if (!fs.existsSync(directory)) {
+      fs.mkdirSync(directory, { recursive: true });
+    }
+    
+    // Write notebook file
+    fs.writeFileSync(notebookPath, notebookContent, 'utf8');
+    const notebookStats = fs.statSync(notebookPath);
+    
+    // Write layout file if provided
+    let layoutStats = null;
+    let layoutPath = null;
+    if (layoutContent) {
+      const notebookFilename = path.basename(notebookPath, '.ipynb');
+      layoutPath = path.join(directory, `${notebookFilename}.layout.json`);
+      fs.writeFileSync(layoutPath, layoutContent, 'utf8');
+      layoutStats = fs.statSync(layoutPath);
+    }
+    
+    if (!silent) {
+      console.log(`Saved notebook: ${notebookPath} (${notebookStats.size} bytes)`);
+      if (layoutPath) {
+        console.log(`Saved layout: ${layoutPath} (${layoutStats.size} bytes)`);
+      }
+    }
+    
+    res.json({
+      success: true,
+      notebookPath,
+      layoutPath,
+      notebookSize: notebookStats.size,
+      layoutSize: layoutStats ? layoutStats.size : 0,
+      modified: notebookStats.mtime
+    });
+    
+  } catch (error) {
+    res.status(500).json({ error: `Failed to save notebook: ${error.message}` });
+  }
+});
+
+// Register notebook working directory endpoint (legacy support)
 app.post('/api/register-working-directory', (req, res) => {
   const { documentId, workingDirectory } = req.body;
   

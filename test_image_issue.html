@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Issue Test</title>
+</head>
+<body>
+    <h1>Image Display Test</h1>
+    
+    <h2>Original problematic image tag:</h2>
+    <img src="TL494_application.png" alt="Table from text" style="width:500px;"/>
+    
+    <h2>What should happen:</h2>
+    <p>The image should display, not just the alt text "Table from text"</p>
+    
+    <h2>Test with transformed URL:</h2>
+    <img src="/api/notebook-files/test-document/TL494_application.png" alt="Table from text" style="width:500px;"/>
+    
+    <script>
+        // Test image loading
+        const images = document.querySelectorAll('img');
+        images.forEach((img, index) => {
+            img.onload = () => {
+                console.log(`Image ${index + 1} loaded successfully:`, img.src);
+            };
+            img.onerror = () => {
+                console.error(`Image ${index + 1} failed to load:`, img.src);
+                console.log(`Alt text being shown: "${img.alt}"`);
+            };
+        });
+    </script>
+</body>
+</html>

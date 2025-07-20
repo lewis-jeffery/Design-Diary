@@ -87,9 +87,13 @@ interface StoreActions {
   toggleCellCollapse: (cellId: string) => void;
 }
 
-export const useStore = create<AppState & StoreActions>((set, get) => ({
+export const useStore = create<AppState & StoreActions>((set, get) => {
+  // Create initial document
+  const initialDocument = createInitialDocument();
+  
+  return {
   // Initial state
-  document: createInitialDocument(),
+  document: initialDocument,
   dragState: {
     isDragging: false,
     draggedCellId: null,
@@ -109,11 +113,18 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
 
   // Document actions
   createNewDocument: () => {
-    set({ document: createInitialDocument() });
+    const newDocument = createInitialDocument();
+    set({ document: newDocument });
+    
+    // Register the current working directory for this new document
+    get().registerWorkingDirectory(newDocument.id, '/Users/lewis/opt/design-diary');
   },
 
   loadDocument: (document: DesignDiaryDocument) => {
     set({ document });
+    
+    // Register the current working directory for this loaded document
+    get().registerWorkingDirectory(document.id, '/Users/lewis/opt/design-diary');
   },
 
   saveDocument: () => {
@@ -163,7 +174,9 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
 
   registerWorkingDirectory: async (documentId: string, workingDirectory: string) => {
     try {
-      const response = await fetch('/api/register-working-directory', {
+      console.log('Attempting to register working directory:', { documentId, workingDirectory });
+      
+      const response = await fetch('http://localhost:3001/api/register-working-directory', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -175,8 +188,12 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        console.error('Failed to register working directory:', error);
+        const errorText = await response.text();
+        console.error('Failed to register working directory:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText
+        });
         return;
       }
 
@@ -184,6 +201,7 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
       console.log('Working directory registered successfully:', result);
     } catch (error) {
       console.error('Error registering working directory:', error);
+      // Don't throw the error, just log it so the app continues to work
     }
   },
 
@@ -197,113 +215,105 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
     });
   },
 
-  saveAsJupyter: () => {
+  saveAsJupyter: async () => {
     const { document } = get();
     
-    // Prompt user for filename
-    const userFileName = prompt('Enter filename (without extension):', 
-      document.name === 'Untitled Design Diary' ? 'my_design_diary' : document.name.replace(/\s+/g, '_')
+    // Prompt user for file path
+    const filePath = prompt(
+      'Enter the full path where you want to save the notebook:\n\n' +
+      'Example: /Users/username/Documents/my-project/notebook.ipynb\n\n' +
+      'The server will automatically save both .ipynb and .layout.json files.'
     );
     
-    if (!userFileName) {
+    if (!filePath || !filePath.trim()) {
       return; // User cancelled
     }
     
-    // Clean the filename
-    const cleanFileName = userFileName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const cleanPath = filePath.trim();
     
-    // Update document name to match the filename
-    const updatedDocument = {
-      ...document,
-      name: cleanFileName.replace(/_/g, ' '),
-      modified: new Date().toISOString(),
-    };
-    set({ document: updatedDocument });
+    // Ensure the path ends with .ipynb
+    const notebookPath = cleanPath.endsWith('.ipynb') ? cleanPath : `${cleanPath}.ipynb`;
     
-    const { notebook, layout } = get().exportToJupyter();
-    
-    // Download notebook file
-    const notebookBlob = new Blob([notebook], { type: 'application/json' });
-    const notebookUrl = URL.createObjectURL(notebookBlob);
-    const notebookLink = window.document.createElement('a');
-    notebookLink.href = notebookUrl;
-    notebookLink.download = `${cleanFileName}.ipynb`;
-    window.document.body.appendChild(notebookLink);
-    notebookLink.click();
-    window.document.body.removeChild(notebookLink);
-    URL.revokeObjectURL(notebookUrl);
-
-    // Save the file info for future quick saves
-    get().setSavedFileInfo(cleanFileName, '');
-
-    // Download layout file with small delay
-    setTimeout(() => {
-      const layoutBlob = new Blob([layout], { type: 'application/json' });
-      const layoutUrl = URL.createObjectURL(layoutBlob);
-      const layoutLink = window.document.createElement('a');
-      layoutLink.href = layoutUrl;
-      layoutLink.download = `${cleanFileName}.layout.json`;
-      window.document.body.appendChild(layoutLink);
-      layoutLink.click();
-      window.document.body.removeChild(layoutLink);
-      URL.revokeObjectURL(layoutUrl);
-    }, 100);
+    try {
+      const { notebook, layout } = get().exportToJupyter();
+      
+      // Call server to save the files
+      const response = await fetch('http://localhost:3001/api/save-notebook', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          notebookPath,
+          notebookContent: notebook,
+          layoutContent: layout,
+          silent: false
+        }),
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to save notebook');
+      }
+      
+      const result = await response.json();
+      console.log('Save result:', result);
+      
+      // Extract filename from path for saved file info
+      const fileName = notebookPath.split('/').pop()?.replace('.ipynb', '') || 'notebook';
+      
+      // Save the file info for future quick saves
+      get().setSavedFileInfo(fileName, notebookPath);
+      
+      alert(`Successfully saved:\n• ${result.notebookPath}\n• ${result.layoutPath}`);
+      
+    } catch (error) {
+      console.error('Save error:', error);
+      alert(`Save failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   },
 
-  saveJupyter: () => {
+  saveJupyter: async () => {
     const { savedFileInfo } = get();
     
-    if (!savedFileInfo.baseFileName) {
+    if (!savedFileInfo.baseFileName || !savedFileInfo.lastSavedPath) {
       // If no previous save, fall back to Save As
       get().saveAsJupyter();
       return;
     }
 
-    const { notebook, layout } = get().exportToJupyter();
-    
-    // Use the previously saved filename
-    const baseFileName = savedFileInfo.baseFileName;
-    
-    // Create a more direct download that bypasses filename prompts
-    const downloadFile = (content: string, filename: string) => {
-      try {
-        const blob = new Blob([content], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        
-        // Create a temporary link element
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        
-        // Set additional attributes to ensure direct download
-        link.setAttribute('download', filename);
-        link.style.display = 'none';
-        link.style.visibility = 'hidden';
-        
-        // Add to DOM
-        document.body.appendChild(link);
-        
-        // Force click and immediate cleanup
-        link.click();
-        
-        // Clean up immediately
-        setTimeout(() => {
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
-        }, 100);
-        
-      } catch (error) {
-        console.error('Download failed:', error);
+    try {
+      const { notebook, layout } = get().exportToJupyter();
+      
+      // Use the previously saved path
+      const notebookPath = savedFileInfo.lastSavedPath;
+      
+      // Call server to save the files silently
+      const response = await fetch('http://localhost:3001/api/save-notebook', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          notebookPath,
+          notebookContent: notebook,
+          layoutContent: layout,
+          silent: true // Silent save - no console logging
+        }),
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to save notebook');
       }
-    };
-
-    // Download both files with the saved filename
-    downloadFile(notebook, `${baseFileName}.ipynb`);
-    
-    // Download layout file with delay to prevent browser blocking
-    setTimeout(() => {
-      downloadFile(layout, `${baseFileName}.layout.json`);
-    }, 300);
+      
+      const result = await response.json();
+      console.log('Silent save completed:', result.notebookPath);
+      
+    } catch (error) {
+      console.error('Save error:', error);
+      alert(`Save failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   },
 
   // Cell actions
@@ -963,4 +973,11 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
       get().updateCell(cellId, { collapsed: !cell.collapsed });
     }
   },
-}));
+};
+});
+
+// Register working directory for initial document when store is created
+setTimeout(() => {
+  const store = useStore.getState();
+  store.registerWorkingDirectory(store.document.id, '/Users/lewis/opt/design-diary');
+}, 100);

@@ -462,6 +462,49 @@ CMD ["node", "server.js"]
 - **Load Time**: Application startup time
 - **Compatibility**: Jupyter notebook import/export success rate
 
+## Recent Enhancements (v1.0.1)
+
+### Image Display System
+- **Fixed Image Rendering**: Resolved issue where images showed only alt text instead of actual images
+- **Enhanced URL Transformation**: Proper conversion of relative image URLs to absolute server URLs
+- **Visual Error Feedback**: Failed images now show red borders and console error logging
+- **Multiple Format Support**: Both HTML `<img>` tags and Markdown `![alt](src)` syntax supported
+- **Server-Side Image Serving**: Robust `/api/notebook-files/` endpoint for serving notebook assets
+
+### Dropbox Integration & File Access
+- **Symbolic Link Resolution**: Automatic detection and resolution of Dropbox CloudStorage symbolic links
+- **Enhanced Error Handling**: User-friendly error messages with specific guidance for permission issues
+- **CloudStorage Support**: Full compatibility with modern macOS Dropbox integration
+- **Permission Diagnostics**: Comprehensive error messages explaining how to grant Full Disk Access
+- **Directory Browser Improvements**: Better navigation and error recovery in file browser
+
+### Technical Improvements
+- **Server Symbolic Link Handling**: Automatic resolution of `/Users/lewis/Dropbox` → `/Users/lewis/Library/CloudStorage/Dropbox`
+- **Enhanced Directory Browser**: Improved error handling with specific CloudStorage guidance
+- **Image URL Processing**: Fixed relative-to-absolute URL conversion with proper server endpoints
+- **Error Visualization**: Visual indicators for failed image loads with debugging information
+
+### File System Enhancements
+```typescript
+// Enhanced image URL transformation
+const transformedSrc = `http://localhost:3001/api/notebook-files/${documentId}/${src}`;
+
+// Visual error handling for failed images
+onerror="console.error('Failed to load image:', this.src); this.style.border='2px solid red'; this.style.padding='10px';"
+```
+
+### Server-Side Improvements
+```javascript
+// Symbolic link resolution in server
+if (fs.lstatSync(directoryPath).isSymbolicLink()) {
+  resolvedPath = fs.readlinkSync(directoryPath);
+  if (!path.isAbsolute(resolvedPath)) {
+    resolvedPath = path.resolve(path.dirname(directoryPath), resolvedPath);
+  }
+  console.log(`Resolved symbolic link: ${directoryPath} -> ${resolvedPath}`);
+}
+```
+
 ## Future Enhancements
 
 ### Version 1.1 Features

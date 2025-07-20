@@ -31,14 +31,16 @@ const renderMarkdown = (text: string, documentId?: string): string => {
 
   // Transform relative image URLs to use notebook files endpoint
   if (documentId) {
-    // Handle HTML img tags with relative src
+    // Handle HTML img tags with relative src - improved regex to handle various formats
     rendered = rendered.replace(
-      /<img([^>]*)\ssrc=["']([^"']+)["']([^>]*)>/gim,
+      /<img([^>]*?)src\s*=\s*["']([^"']+)["']([^>]*?)>/gim,
       (match, beforeSrc, src, afterSrc) => {
+        console.log('Found img tag:', { match, src, documentId });
         // Check if it's a relative URL (doesn't start with http:// or https:// or /)
-        if (!src.match(/^(https?:\/\/|\/)/)) {
-          const transformedSrc = `/api/notebook-files/${documentId}/${src}`;
-          return `<img${beforeSrc} src="${transformedSrc}"${afterSrc}>`;
+        if (!src.match(/^(https?:\/\/|\/|data:)/)) {
+          const transformedSrc = `http://localhost:3001/api/notebook-files/${documentId}/${src}`;
+          console.log('Transforming image URL:', { original: src, transformed: transformedSrc });
+          return `<img${beforeSrc} src="${transformedSrc}"${afterSrc} onerror="console.error('Failed to load image:', this.src); this.style.border='2px solid red'; this.style.padding='10px';">`;
         }
         return match;
       }
@@ -48,14 +50,18 @@ const renderMarkdown = (text: string, documentId?: string): string => {
     rendered = rendered.replace(
       /!\[([^\]]*)\]\(([^)]+)\)/gim,
       (match, alt, src) => {
+        console.log('Found markdown image:', { match, src, documentId });
         // Check if it's a relative URL
-        if (!src.match(/^(https?:\/\/|\/)/)) {
-          const transformedSrc = `/api/notebook-files/${documentId}/${src}`;
-          return `<img src="${transformedSrc}" alt="${alt}">`;
+        if (!src.match(/^(https?:\/\/|\/|data:)/)) {
+          const transformedSrc = `http://localhost:3001/api/notebook-files/${documentId}/${src}`;
+          console.log('Transforming markdown image URL:', { original: src, transformed: transformedSrc });
+          return `<img src="${transformedSrc}" alt="${alt}" onerror="console.error('Failed to load image:', this.src); this.style.border='2px solid red'; this.style.padding='10px';">`;
         }
         return `<img src="${src}" alt="${alt}">`;
       }
     );
+  } else {
+    console.warn('No documentId provided for image URL transformation');
   }
 
   return rendered;
@@ -92,27 +98,34 @@ const TextArea = styled.textarea<{ fontSize: number; fontFamily: string }>`
 `;
 
 const FontControls = styled.div`
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
   display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
-  padding: 4px;
-  background: #f8f9fa;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #dee2e6;
   border-radius: 4px;
-  font-size: 12px;
+  padding: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  font-size: 11px;
   align-items: center;
+  z-index: 1001;
+  backdrop-filter: blur(2px);
 `;
 
-const ModeToggle = styled.button<{ $isActive: boolean }>`
-  padding: 4px 8px;
+const ControlButton = styled.button`
+  padding: 2px 4px;
   border: 1px solid #dee2e6;
-  border-radius: 3px;
-  background: ${props => props.$isActive ? '#007bff' : 'white'};
-  color: ${props => props.$isActive ? 'white' : '#495057'};
-  font-size: 11px;
+  border-radius: 2px;
+  background: white;
+  color: #495057;
+  font-size: 10px;
   cursor: pointer;
   
   &:hover {
-    background: ${props => props.$isActive ? '#0056b3' : '#f8f9fa'};
+    background: #f8f9fa;
+    color: #007bff;
   }
 `;
 
@@ -140,6 +153,11 @@ const RenderedContent = styled.div<{ fontSize: number; fontFamily: string }>`
     color: #6c757d;
   }
   li { margin: 0.25em 0; }
+  
+  img {
+    max-width: 100%;
+    height: auto;
+  }
 `;
 
 const FontSizeInput = styled.input`
@@ -164,6 +182,7 @@ interface TextCellProps {
 
 const TextCell: React.FC<TextCellProps> = ({ cell }) => {
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const renderedContentRef = useRef<HTMLDivElement>(null);
   const { updateCell, clearSelection, document } = useStore();
   const [isEditMode, setIsEditMode] = useState(true);
 
@@ -174,6 +193,78 @@ const TextCell: React.FC<TextCellProps> = ({ cell }) => {
     }, 50);
     return () => clearTimeout(timer);
   }, [clearSelection]);
+
+  // Handle image loading with directory handles
+  useEffect(() => {
+    if (!isEditMode && renderedContentRef.current) {
+      const images = renderedContentRef.current.querySelectorAll('img');
+      
+      images.forEach(async (img) => {
+        const originalSrc = img.src;
+        
+        // Check if this is a notebook file URL that might need directory handle
+        if (originalSrc.includes('/api/notebook-files/')) {
+          img.onerror = async () => {
+            try {
+              // Try to fetch the URL to see if it returns a directory handle response
+              const response = await fetch(originalSrc);
+              
+              if (response.ok) {
+                const data = await response.json();
+                
+                if (data.useDirectoryHandle) {
+                  console.log('Using directory handle for image:', data.filePath);
+                  
+                  // Get the directory handle from window storage
+                  const directoryHandles = (window as any).notebookDirectoryHandles;
+                  if (directoryHandles && directoryHandles.has(data.documentId)) {
+                    const directoryHandle = directoryHandles.get(data.documentId);
+                    
+                    try {
+                      // Get the file from the directory
+                      const fileHandle = await directoryHandle.getFileHandle(data.filePath);
+                      const file = await fileHandle.getFile();
+                      
+                      // Create a blob URL for the image
+                      const blobUrl = URL.createObjectURL(file);
+                      img.src = blobUrl;
+                      
+                      console.log('Successfully loaded image from directory handle:', data.filePath);
+                      
+                      // Clean up the blob URL when the image is removed
+                      img.onload = () => {
+                        // Store the blob URL for cleanup later
+                        (img as any)._blobUrl = blobUrl;
+                      };
+                      
+                    } catch (fileError) {
+                      console.error('Failed to load file from directory handle:', fileError);
+                      img.alt = `Failed to load: ${data.filePath}`;
+                    }
+                  } else {
+                    console.warn('No directory handle found for document:', data.documentId);
+                    img.alt = `No directory access for: ${data.filePath}`;
+                  }
+                }
+              }
+            } catch (error) {
+              console.error('Error handling image load failure:', error);
+            }
+          };
+        }
+      });
+      
+      // Cleanup blob URLs when component unmounts or content changes
+      return () => {
+        images.forEach((img) => {
+          const blobUrl = (img as any)._blobUrl;
+          if (blobUrl) {
+            URL.revokeObjectURL(blobUrl);
+          }
+        });
+      };
+    }
+  }, [isEditMode, cell.content, document.id]);
 
   // Safely access renderingHints with proper defaults
   const renderingHints = cell.renderingHints || {};
@@ -214,24 +305,24 @@ const TextCell: React.FC<TextCellProps> = ({ cell }) => {
     }
   }, [cell.content]);
 
+  // Function to handle "execute" (render) for text cells
+  const handleExecute = useCallback(() => {
+    setIsEditMode(false);
+  }, []);
+
+  // Expose the execute function to the cell for toolbar access
+  useEffect(() => {
+    if (cell.type === 'markdown') {
+      // Store the execute function on the cell for toolbar access
+      (cell as any).executeFunction = handleExecute;
+    }
+  }, [cell, handleExecute]);
+
   return (
     <TextCellContainer>
-      {/* Only show controls when cell is selected */}
-      {cell.selected && (
+      {/* Only show font controls when cell is selected and in edit mode */}
+      {cell.selected && isEditMode && (
         <FontControls>
-          <ModeToggle 
-            $isActive={isEditMode} 
-            onClick={() => setIsEditMode(true)}
-          >
-            Edit
-          </ModeToggle>
-          <ModeToggle 
-            $isActive={!isEditMode} 
-            onClick={() => setIsEditMode(false)}
-          >
-            Render
-          </ModeToggle>
-          
           <label>
             Size:
             <FontSizeInput
@@ -256,6 +347,18 @@ const TextCell: React.FC<TextCellProps> = ({ cell }) => {
               <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
             </FontFamilySelect>
           </label>
+          <ControlButton onClick={() => setIsEditMode(false)}>
+            Render
+          </ControlButton>
+        </FontControls>
+      )}
+      
+      {/* Show edit button when in render mode */}
+      {cell.selected && !isEditMode && (
+        <FontControls>
+          <ControlButton onClick={() => setIsEditMode(true)}>
+            Edit
+          </ControlButton>
         </FontControls>
       )}
       
@@ -271,6 +374,7 @@ const TextCell: React.FC<TextCellProps> = ({ cell }) => {
           />
         ) : (
           <RenderedContent
+            ref={renderedContentRef}
             fontSize={fontSize}
             fontFamily={fontFamily}
             dangerouslySetInnerHTML={{ __html: renderMarkdown(cell.content || '', document.id) }}

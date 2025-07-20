@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Test</title>
+</head>
+<body>
+    <h1>Image Loading Test</h1>
+    
+    <h2>Direct Image Reference</h2>
+    <img src="Soft_start.png" alt="Table from text" style="width:600px; border: 1px solid #ccc;"/>
+    
+    <h2>Via Backend API</h2>
+    <img src="http://localhost:3001/api/notebook-files/test-doc/Soft_start.png" alt="Table from text via API" style="width:600px; border: 1px solid #ccc;"/>
+    
+    <h2>Test Info</h2>
+    <p>If the working directory registration is working correctly, the second image should load.</p>
+    <p>The first image will likely fail since it's a direct reference.</p>
+    
+    <script>
+        // Test the image URL transformation logic
+        function transformImageUrls(content, documentId) {
+            console.log('Original content:', content);
+            
+            // Transform HTML img tags
+            const htmlImgRegex = /<img\s+[^>]*src\s*=\s*["']([^"']+)["'][^>]*>/gi;
+            let transformedContent = content.replace(htmlImgRegex, (match, src) => {
+                console.log('Found HTML img src:', src);
+                
+                // Skip if already transformed or is a full URL
+                if (src.startsWith('http') || src.startsWith('/api/')) {
+                    console.log('Skipping transformation for:', src);
+                    return match;
+                }
+                
+                // Transform relative path to API endpoint
+                const transformedSrc = `/api/notebook-files/${documentId}/${src}`;
+                const transformedMatch = match.replace(src, transformedSrc);
+                
+                console.log('Transformed:', src, '->', transformedSrc);
+                console.log('Full match transformed:', match, '->', transformedMatch);
+                
+                return transformedMatch;
+            });
+            
+            // Transform markdown images
+            const markdownImgRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+            transformedContent = transformedContent.replace(markdownImgRegex, (match, alt, src) => {
+                console.log('Found markdown img src:', src);
+                
+                // Skip if already transformed or is a full URL
+                if (src.startsWith('http') || src.startsWith('/api/')) {
+                    console.log('Skipping transformation for:', src);
+                    return match;
+                }
+                
+                // Transform relative path to API endpoint
+                const transformedSrc = `/api/notebook-files/${documentId}/${src}`;
+                const transformedMatch = `![${alt}](${transformedSrc})`;
+                
+                console.log('Transformed:', src, '->', transformedSrc);
+                console.log('Full match transformed:', match, '->', transformedMatch);
+                
+                return transformedMatch;
+            });
+            
+            console.log('Final transformed content:', transformedContent);
+            return transformedContent;
+        }
+        
+        // Test the transformation
+        const testContent = '<img src="Soft_start.png" alt="Table from text" style="width:600px;"/>';
+        const testDocumentId = 'test-document-id';
+        
+        console.log('=== Testing Image URL Transformation ===');
+        const result = transformImageUrls(testContent, testDocumentId);
+        
+        // Display the result
+        const resultDiv = document.createElement('div');
+        resultDiv.innerHTML = `
+            <h2>Transformation Test Result</h2>
+            <p><strong>Original:</strong> ${testContent}</p>
+            <p><strong>Transformed:</strong> ${result}</p>
+        `;
+        document.body.appendChild(resultDiv);
+    </script>
+</body>
+</html>

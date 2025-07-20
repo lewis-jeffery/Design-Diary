@@ -80,26 +80,60 @@ A modern, visual interface for creating and editing Jupyter notebooks with a can
 4. **Open your browser**
    Navigate to `http://localhost:3000`
 
-### Shutting Down
+### Shutting Down and Restarting
 
-Design Diary provides multiple ways to gracefully shut down the application:
+Design Diary provides multiple ways to gracefully shut down and restart the application:
+
+#### **Shutting Down**
 
 1. **Using the Quit Button**: Click the red "🚪 Quit" button in the toolbar
    - Automatically saves unsaved work (with confirmation)
    - Gracefully shuts down both frontend and backend servers
    - Cleans up temporary files and Python sessions
 
-2. **Using the Shutdown Script**: Run the shutdown script from the command line
+2. **Using the Cleanup Script**: Run the cleanup script from the command line
    ```bash
-   ./shutdown.sh
+   ./cleanup.sh
    ```
-   - Detects running servers and shuts them down gracefully
+   - Detects and terminates all Design Diary processes on ports 3000 and 3001
    - Cleans up all temporary files and processes
    - Safe to use even if servers are unresponsive
+   - Provides detailed feedback on what was cleaned up
 
 3. **Manual Shutdown**: Use Ctrl+C in the terminal running `./start-dev.sh`
    - Servers will attempt graceful shutdown
-   - May require running `./shutdown.sh` for complete cleanup
+   - May require running `./cleanup.sh` for complete cleanup
+
+#### **Restarting**
+
+1. **Using the Restart Script**: For a complete restart
+   ```bash
+   ./restart.sh
+   ```
+   - Automatically runs cleanup first
+   - Starts both backend and frontend servers
+   - Provides process IDs and status information
+   - Shows URLs for accessing the application
+
+2. **Manual Restart**: After cleanup
+   ```bash
+   # After running ./cleanup.sh
+   cd server && npm start &  # Start backend
+   npm start                 # Start frontend
+   ```
+
+#### **Troubleshooting Port Issues**
+
+If you get "port already in use" errors:
+```bash
+# Clean up any stuck processes
+./cleanup.sh
+
+# Wait a moment, then restart
+./restart.sh
+```
+
+The cleanup script will forcefully terminate any processes using ports 3000 or 3001, ensuring a clean restart.
 
 ## 📖 Usage Guide
 

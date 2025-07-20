@@ -73,8 +73,16 @@ const CellToolbar: React.FC<CellToolbarProps> = ({ cell }) => {
 
   const handleExecute = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    executeCell(cell.id);
-  }, [cell.id, executeCell]);
+    if (cell.type === 'code') {
+      executeCell(cell.id);
+    } else if (cell.type === 'markdown') {
+      // For markdown cells, call the execute function to render
+      const markdownCell = cell as any;
+      if (markdownCell.executeFunction) {
+        markdownCell.executeFunction();
+      }
+    }
+  }, [cell, executeCell]);
 
   const handleDuplicate = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -133,8 +141,8 @@ const CellToolbar: React.FC<CellToolbarProps> = ({ cell }) => {
 
   return (
     <ToolbarContainer className="cell-toolbar" $selected={cell.selected}>
-      {cell.type === 'code' && (
-        <ExecuteButton onClick={handleExecute} title="Execute Cell">
+      {(cell.type === 'code' || cell.type === 'markdown') && (
+        <ExecuteButton onClick={handleExecute} title={cell.type === 'code' ? "Execute Cell" : "Render Markdown"}>
           ▶
         </ExecuteButton>
       )}

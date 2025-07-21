@@ -86,7 +86,7 @@ const TextArea = styled.textarea<{ fontSize: number; fontFamily: string }>`
   height: 100%;
   border: none;
   outline: none;
-  padding: 12px;
+  padding: 4px 8px;
   font-size: ${props => props.fontSize}px;
   font-family: ${props => props.fontFamily};
   resize: none;
@@ -132,7 +132,7 @@ const ControlButton = styled.button`
 const RenderedContent = styled.div<{ fontSize: number; fontFamily: string }>`
   width: 100%;
   height: 100%;
-  padding: 12px;
+  padding: 4px 8px;
   font-size: ${props => props.fontSize}px;
   font-family: ${props => props.fontFamily};
   overflow: auto;

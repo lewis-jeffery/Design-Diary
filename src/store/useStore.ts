@@ -852,7 +852,8 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
       // Process outputs - handle both text and rich outputs
       const hasTextOutput = result.stdout && result.stdout.trim();
       const hasErrorOutput = result.stderr && result.stderr.trim();
-      const hasRichOutputs = result.outputs && result.outputs.length > 0;
+      const hasRichOutputs = result.outputs && Array.isArray(result.outputs) && result.outputs.length > 0;
+
 
       // Create output cells for different types of output
       // Use the current state after removal, not a fresh get() call

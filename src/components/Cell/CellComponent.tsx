@@ -44,7 +44,7 @@ const CellContainer = styled.div<{
 const CellContent = styled.div<{ $collapsed: boolean; $isOutputCell: boolean }>`
   width: 100%;
   height: ${props => props.$collapsed ? 'auto' : 'calc(100% - 40px)'}; /* Account for toolbar */
-  padding: 8px;
+  padding: 4px 8px; /* Reduced top/bottom padding to 4px, keep side padding at 8px */
   overflow: ${props => 
     props.$collapsed ? 'hidden' : 
     props.$isOutputCell ? 'visible' : 'auto'
@@ -53,7 +53,7 @@ const CellContent = styled.div<{ $collapsed: boolean; $isOutputCell: boolean }>`
   /* For output cells, adjust dimensions to account for consistent padding */
   ${props => props.$isOutputCell && `
     width: calc(100% - 16px); /* Account for 8px padding on each side */
-    height: calc(100% - 56px); /* Account for toolbar + 8px padding top/bottom */
+    height: calc(100% - 48px); /* Account for toolbar + 4px padding top/bottom */
   `}
 `;
 

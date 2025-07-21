@@ -111,10 +111,39 @@ export class JupyterConversionService {
       const cellId = jupyterCell.metadata.design_diary?.cell_id || jupyterCell.id || this.generateId();
       const cellLayout = layout.cells[cellId];
       
+      console.log('🔧 DEBUG: Processing Jupyter cell:', cellId, jupyterCell.cell_type, 'hasOutputs:', jupyterCell.outputs && jupyterCell.outputs.length > 0, 'hasLayout:', !!cellLayout);
+      
       if (cellLayout) {
         const designDiaryCell = this.convertJupyterToCell(jupyterCell, cellLayout, codeExecutionOrder);
         if (designDiaryCell) {
+          console.log('🔧 DEBUG: Created Design Diary cell:', designDiaryCell.id, designDiaryCell.type, 'at', designDiaryCell.position);
           document.cells.push(designDiaryCell);
+          
+          // Skip creating output cells during import - they're already stored as separate raw cells in the notebook
+          // The convertJupyterOutputsToDesignDiaryCells method is only used for fresh Jupyter notebooks 
+          // that have outputs in the outputs array but haven't been exported from Design Diary before
+          if (designDiaryCell.type === 'code' && jupyterCell.cell_type === 'code' && jupyterCell.outputs && jupyterCell.outputs.length > 0) {
+            // Check if this is a fresh import (no design_diary metadata) vs re-import of exported notebook
+            const hasDesignDiaryMetadata = jupyterCell.metadata.design_diary?.cell_id;
+            
+            if (!hasDesignDiaryMetadata) {
+              // This is a fresh Jupyter notebook - create output cells from outputs array
+              console.log('🔧 DEBUG: Fresh Jupyter import - converting outputs to Design Diary cells for cell:', designDiaryCell.id);
+              const outputCells = this.convertJupyterOutputsToDesignDiaryCells(
+                jupyterCell.outputs, 
+                designDiaryCell.id, 
+                designDiaryCell.position, 
+                designDiaryCell.size,
+                designDiaryCell.executionOrder
+              );
+              console.log('🔧 DEBUG: Created', outputCells.length, 'output cells for', designDiaryCell.id);
+              document.cells.push(...outputCells);
+            } else {
+              // This is a re-import of a Design Diary exported notebook - outputs are already separate cells
+              console.log('🔧 DEBUG: Re-importing Design Diary notebook - skipping output conversion for cell:', designDiaryCell.id);
+            }
+          }
+          
           // Increment execution order only for code cells
           if (designDiaryCell.type === 'code') {
             codeExecutionOrder++;
@@ -122,6 +151,14 @@ export class JupyterConversionService {
         }
       }
     }
+
+    // Post-process to resolve pending sourceCodeCellId references
+    this.resolvePendingOutputCellReferences(document);
+
+    console.log('🔧 DEBUG: Final document has', document.cells.length, 'cells');
+    document.cells.forEach((cell, index) => {
+      console.log(`🔧 DEBUG: Cell ${index + 1}:`, cell.id, cell.type, 'at', cell.position, 'content:', cell.type === 'raw' ? cell.content.substring(0, 30) + '...' : (cell.content ? cell.content.substring(0, 30) + '...' : ''));
+    });
 
     return document;
   }
@@ -337,12 +374,30 @@ export class JupyterConversionService {
     }
 
     if (jupyterCell.cell_type === 'raw') {
-      return {
+      const rawCell = {
         ...baseCell,
         type: 'raw',
         content,
         format: 'text'
-      };
+      } as any;
+      
+      // Check if this raw cell is an output cell by looking at its metadata
+      const originalType = jupyterCell.metadata.design_diary?.original_type;
+      if (originalType === 'raw') {
+        // This is an output cell - we need to link it to its source code cell
+        // Look for a code cell that would logically be the source of this output
+        // This is a heuristic based on execution order and positioning
+        const executionOrder = jupyterCell.metadata.design_diary?.execution_order;
+        if (executionOrder !== null && executionOrder !== undefined) {
+          // Mark this as an output cell with metadata to help identify its source
+          rawCell.sourceCodeCellId = `pending-${executionOrder}`; // Will be resolved later
+          rawCell.outputType = 'text';
+          rawCell.success = true;
+          rawCell.executionTime = new Date().toISOString();
+        }
+      }
+      
+      return rawCell;
     }
 
     // Fallback for unknown cell types
@@ -412,6 +467,205 @@ export class JupyterConversionService {
   private static extractCommentLines(source: string | string[]): string[] {
     const lines = Array.isArray(source) ? source : source.split('\n');
     return lines.filter(line => line.trim().startsWith('#')).slice(0, 3);
+  }
+
+  /**
+   * Convert Jupyter outputs to Design Diary output cells
+   */
+  private static convertJupyterOutputsToDesignDiaryCells(
+    outputs: JupyterOutput[], 
+    sourceCodeCellId: string, 
+    codePosition: { x: number; y: number }, 
+    codeSize: { width: number; height: number },
+    executionOrder: number | null
+  ): Cell[] {
+    const outputCells: Cell[] = [];
+    let outputYOffset = 0;
+
+    for (const output of outputs) {
+      if (output.output_type === 'stream') {
+        const streamOutput = output as any;
+        const content = Array.isArray(streamOutput.text) ? streamOutput.text.join('') : streamOutput.text;
+        const outputType = streamOutput.name === 'stderr' ? 'error' : 'text';
+        
+        const outputCell: Cell = {
+          id: this.generateId(),
+          type: 'raw',
+          position: {
+            x: codePosition.x + codeSize.width + 20,
+            y: codePosition.y + outputYOffset,
+          },
+          size: { 
+            width: 400, 
+            height: Math.max(100, Math.min(300, content.split('\n').length * 20 + 40)) 
+          },
+          executionOrder,
+          collapsed: false,
+          collapsedSize: { width: 400, height: 50 },
+          selected: false,
+          zIndex: 10,
+          content,
+          format: 'text',
+        } as any;
+        
+        // Mark this as an output cell for the source code cell
+        (outputCell as any).sourceCodeCellId = sourceCodeCellId;
+        (outputCell as any).outputType = outputType;
+        (outputCell as any).success = outputType !== 'error';
+        (outputCell as any).executionTime = new Date().toISOString();
+        
+        outputCells.push(outputCell);
+        outputYOffset += outputCell.size.height + 20;
+      }
+      
+      // Handle other output types like display_data, execute_result, etc.
+      else if (output.output_type === 'display_data' || output.output_type === 'execute_result') {
+        const displayOutput = output as any;
+        
+        // Handle image outputs
+        if (displayOutput.data && (displayOutput.data['image/png'] || displayOutput.data['image/jpeg'])) {
+          const imageData = displayOutput.data['image/png'] || displayOutput.data['image/jpeg'];
+          const outputCell: Cell = {
+            id: this.generateId(),
+            type: 'raw',
+            position: {
+              x: codePosition.x + codeSize.width + 20,
+              y: codePosition.y + outputYOffset,
+            },
+            size: { width: 400, height: 300 },
+            executionOrder,
+            collapsed: false,
+            collapsedSize: { width: 400, height: 50 },
+            selected: false,
+            zIndex: 10,
+            content: '', // No text content for image cells
+            format: 'text',
+          } as any;
+          
+          // Add image output data
+          (outputCell as any).outputs = [{
+            format: 'image',
+            data: `data:image/png;base64,${imageData}`,
+            metadata: displayOutput.metadata || {}
+          }];
+          
+          (outputCell as any).sourceCodeCellId = sourceCodeCellId;
+          (outputCell as any).outputType = 'image';
+          (outputCell as any).success = true;
+          (outputCell as any).executionTime = new Date().toISOString();
+          
+          outputCells.push(outputCell);
+          outputYOffset += outputCell.size.height + 20;
+        }
+        
+        // Handle text/plain outputs
+        else if (displayOutput.data && displayOutput.data['text/plain']) {
+          const textData = Array.isArray(displayOutput.data['text/plain']) 
+            ? displayOutput.data['text/plain'].join('') 
+            : displayOutput.data['text/plain'];
+            
+          const outputCell: Cell = {
+            id: this.generateId(),
+            type: 'raw',
+            position: {
+              x: codePosition.x + codeSize.width + 20,
+              y: codePosition.y + outputYOffset,
+            },
+            size: { 
+              width: 400, 
+              height: Math.max(100, Math.min(300, textData.split('\n').length * 20 + 40)) 
+            },
+            executionOrder,
+            collapsed: false,
+            collapsedSize: { width: 400, height: 50 },
+            selected: false,
+            zIndex: 10,
+            content: textData,
+            format: 'text',
+          } as any;
+          
+          (outputCell as any).sourceCodeCellId = sourceCodeCellId;
+          (outputCell as any).outputType = 'text';
+          (outputCell as any).success = true;
+          (outputCell as any).executionTime = new Date().toISOString();
+          
+          outputCells.push(outputCell);
+          outputYOffset += outputCell.size.height + 20;
+        }
+      }
+      
+      // Handle error outputs
+      else if (output.output_type === 'error') {
+        const errorOutput = output as any;
+        const errorContent = `${errorOutput.ename}: ${errorOutput.evalue}\n${errorOutput.traceback?.join('\n') || ''}`;
+        
+        const outputCell: Cell = {
+          id: this.generateId(),
+          type: 'raw',
+          position: {
+            x: codePosition.x + codeSize.width + 20,
+            y: codePosition.y + outputYOffset,
+          },
+          size: { 
+            width: 400, 
+            height: Math.max(150, Math.min(400, errorContent.split('\n').length * 20 + 40)) 
+          },
+          executionOrder,
+          collapsed: false,
+          collapsedSize: { width: 400, height: 50 },
+          selected: false,
+          zIndex: 10,
+          content: errorContent,
+          format: 'text',
+        } as any;
+        
+        (outputCell as any).sourceCodeCellId = sourceCodeCellId;
+        (outputCell as any).outputType = 'error';
+        (outputCell as any).success = false;
+        (outputCell as any).executionTime = new Date().toISOString();
+        
+        outputCells.push(outputCell);
+        outputYOffset += outputCell.size.height + 20;
+      }
+    }
+
+    return outputCells;
+  }
+
+  /**
+   * Resolve pending sourceCodeCellId references in output cells
+   */
+  private static resolvePendingOutputCellReferences(document: DesignDiaryDocument): void {
+    // Create a map of execution order to code cell ID
+    const executionOrderToCodeCellId = new Map<number, string>();
+    
+    // First pass: collect all code cells and their execution orders
+    for (const cell of document.cells) {
+      if (cell.type === 'code' && cell.executionOrder !== null) {
+        executionOrderToCodeCellId.set(cell.executionOrder, cell.id);
+      }
+    }
+    
+    // Second pass: resolve pending references in output cells
+    for (const cell of document.cells) {
+      const cellWithMetadata = cell as any;
+      if (cell.type === 'raw' && cellWithMetadata.sourceCodeCellId && 
+          cellWithMetadata.sourceCodeCellId.startsWith('pending-')) {
+        
+        const executionOrder = parseInt(cellWithMetadata.sourceCodeCellId.replace('pending-', ''));
+        const actualCodeCellId = executionOrderToCodeCellId.get(executionOrder);
+        
+        if (actualCodeCellId) {
+          cellWithMetadata.sourceCodeCellId = actualCodeCellId;
+          console.log('🔧 DEBUG: Resolved output cell', cell.id, 'to code cell', actualCodeCellId);
+        } else {
+          // If we can't resolve it, remove the sourceCodeCellId to avoid confusion
+          delete cellWithMetadata.sourceCodeCellId;
+          delete cellWithMetadata.outputType;
+          console.log('🔧 DEBUG: Could not resolve output cell', cell.id, 'for execution order', executionOrder);
+        }
+      }
+    }
   }
 
   /**

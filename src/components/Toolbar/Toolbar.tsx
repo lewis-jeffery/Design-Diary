@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import styled from 'styled-components';
 import { useStore, PAGE_SIZES } from '../../store/useStore';
 import { LayoutOptimizationService } from '../../services/layoutOptimizationService';
+import { PDFGenerationService } from '../../services/pdfGenerationService';
 import DirectoryBrowser from '../DirectoryBrowser/DirectoryBrowser';
 import SaveAsDialog from '../DirectoryBrowser/SaveAsDialog';
 
@@ -436,8 +437,139 @@ const Toolbar: React.FC = () => {
     }
   }, [exportToJupyter, setSavedFileInfo]);
 
+  const handleExportToPDF = useCallback(async () => {
+    if (designDocument.cells.length === 0) {
+      alert('No content to export. Please add some cells first.');
+      return;
+    }
+
+    try {
+      // Show loading message
+      const loadingMessage = document.createElement('div');
+      loadingMessage.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        border: 2px solid #007bff;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        z-index: 10000;
+        text-align: center;
+        font-family: Arial, sans-serif;
+      `;
+      loadingMessage.innerHTML = `
+        <h3 style="margin: 0 0 10px 0; color: #007bff;">📄 Generating PDF</h3>
+        <p style="margin: 0; color: #495057;">Rendering content and creating PDF file...</p>
+      `;
+      document.body.appendChild(loadingMessage);
+
+      // Define common page sizes in points (72 points = 1 inch)
+      const pageSizes = {
+        'A4': { width: 595, height: 842, name: 'A4' },
+        'A3': { width: 842, height: 1191, name: 'A3' },
+        'Letter': { width: 612, height: 792, name: 'Letter' },
+        'Legal': { width: 612, height: 1008, name: 'Legal' },
+        'Tabloid': { width: 792, height: 1224, name: 'Tabloid' }
+      };
+
+      // Get current canvas page size
+      const currentPageSize = designDocument.canvas.pageSize;
+      
+      // Ask user for target PDF page size
+      const targetPageName = prompt(
+        `Current canvas: ${currentPageSize.name} (${Math.round(currentPageSize.width)}×${Math.round(currentPageSize.height)})\n\n` +
+        `Choose target PDF page size:\n` +
+        `• A4 (595×842 pts) - Standard document\n` +
+        `• A3 (842×1191 pts) - Large format\n` +
+        `• Letter (612×792 pts) - US standard\n` +
+        `• Legal (612×1008 pts) - US legal\n` +
+        `• Tabloid (792×1224 pts) - Large US\n\n` +
+        `Enter page size name (A4, A3, Letter, Legal, Tabloid):`,
+        'A4'
+      );
+
+      if (!targetPageName) {
+        document.body.removeChild(loadingMessage);
+        return;
+      }
+
+      const targetPageSize = pageSizes[targetPageName.toUpperCase() as keyof typeof pageSizes];
+      if (!targetPageSize) {
+        alert('Invalid page size. Please choose from: A4, A3, Letter, Legal, Tabloid');
+        document.body.removeChild(loadingMessage);
+        return;
+      }
+
+      // Generate PDF with canvas orientation
+      const pdfBlob = await PDFGenerationService.generatePDF(designDocument, {
+        targetPageSize,
+        includeBackground: false, // Clean content-only export
+        quality: 2, // High quality
+        margin: 20, // 20pt margin
+        orientation: designDocument.canvas.orientation // Use canvas orientation
+      });
+
+      // Clean up loading message
+      document.body.removeChild(loadingMessage);
+
+      // Download PDF
+      const fileName = designDocument.name.replace(/\s+/g, '_');
+      PDFGenerationService.downloadPDF(pdfBlob, `${fileName}.pdf`);
+
+      // Show success message
+      const successMessage = document.createElement('div');
+      successMessage.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        border: 2px solid #28a745;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        z-index: 10000;
+        text-align: center;
+        font-family: Arial, sans-serif;
+      `;
+      successMessage.innerHTML = `
+        <h3 style="margin: 0 0 10px 0; color: #28a745;">✅ PDF Generated Successfully</h3>
+        <p style="margin: 0; color: #495057;">Downloaded as: ${fileName}.pdf</p>
+        <p style="margin: 10px 0 0 0; font-size: 12px; color: #6c757d;">Target size: ${targetPageName.toUpperCase()}</p>
+      `;
+      document.body.appendChild(successMessage);
+
+      // Auto-hide success message
+      setTimeout(() => {
+        if (document.body.contains(successMessage)) {
+          document.body.removeChild(successMessage);
+        }
+      }, 3000);
+
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      
+      // Clean up any loading message
+      const loadingMessage = document.querySelector('div[style*="Generating PDF"]');
+      if (loadingMessage) {
+        document.body.removeChild(loadingMessage);
+      }
+      
+      alert(`PDF generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }, [designDocument]);
+
   const handleQuit = useCallback(async () => {
-    const hasUnsavedChanges = designDocument.cells.length > 0 && !savedFileInfo.baseFileName;
+    // Check if this is a new file (never been saved)
+    const isNewFile = !savedFileInfo.baseFileName;
+    // Check if there are any cells (content exists)
+    const hasContent = designDocument.cells.length > 0;
+    // For existing files, we'd need to check if content has changed since last save
+    // For now, we'll assume any content means unsaved changes for new files
+    const hasUnsavedChanges = isNewFile && hasContent;
     
     if (hasUnsavedChanges) {
       const shouldSave = window.confirm(
@@ -461,6 +593,11 @@ const Toolbar: React.FC = () => {
           }
         }
       }
+    }
+
+    // If no unsaved changes, quit silently (no confirmation dialog)
+    if (!hasUnsavedChanges) {
+      console.log('No unsaved changes detected, quitting silently...');
     }
 
     // Show shutdown message
@@ -515,16 +652,28 @@ const Toolbar: React.FC = () => {
         </ToolbarSection>
 
         <ToolbarSection>
-          <ToolbarButton onClick={handleSaveAs}>
+          {/* Save As button - green only for first save of new file */}
+          <ToolbarButton 
+            onClick={handleSaveAs}
+            style={{
+              background: !savedFileInfo.baseFileName && designDocument.cells.length > 0 ? '#28a745' : 'white',
+              color: !savedFileInfo.baseFileName && designDocument.cells.length > 0 ? 'white' : '#495057',
+              borderColor: !savedFileInfo.baseFileName && designDocument.cells.length > 0 ? '#28a745' : '#dee2e6'
+            }}
+            title={!savedFileInfo.baseFileName ? 'Save new document for the first time' : 'Save document with a new name or location'}
+          >
             📓 Save As...
           </ToolbarButton>
+          
+          {/* Save button - green only when there are unsaved changes and file has been saved before */}
           <ToolbarButton 
             onClick={saveJupyter}
             style={{
               opacity: savedFileInfo.baseFileName ? 1 : 0.5,
               cursor: savedFileInfo.baseFileName ? 'pointer' : 'not-allowed',
-              background: savedFileInfo.baseFileName ? '#e8f5e8' : 'white',
-              borderColor: savedFileInfo.baseFileName ? '#28a745' : '#dee2e6'
+              background: savedFileInfo.baseFileName && designDocument.cells.length > 0 ? '#28a745' : 'white',
+              color: savedFileInfo.baseFileName && designDocument.cells.length > 0 ? 'white' : '#495057',
+              borderColor: savedFileInfo.baseFileName && designDocument.cells.length > 0 ? '#28a745' : '#dee2e6'
             }}
             title={savedFileInfo.baseFileName ? `Quick save as ${savedFileInfo.baseFileName}.ipynb and ${savedFileInfo.baseFileName}.layout.json` : 'Use Save As... first to enable quick save'}
           >
@@ -532,6 +681,9 @@ const Toolbar: React.FC = () => {
           </ToolbarButton>
           <ToolbarButton onClick={handleImportFromJupyter}>
             📥 Import .ipynb
+          </ToolbarButton>
+          <ToolbarButton onClick={handleExportToPDF}>
+            📄 Export PDF
           </ToolbarButton>
         </ToolbarSection>
 

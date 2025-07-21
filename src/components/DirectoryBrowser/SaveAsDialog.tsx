@@ -70,6 +70,13 @@ const PathInput = styled.input`
   border-radius: 4px;
   font-family: monospace;
   font-size: 12px;
+  text-align: right; /* Right-justify for long pathnames */
+  direction: rtl; /* Right-to-left text direction to show end of path */
+  
+  &:focus {
+    direction: ltr; /* Switch to normal direction when editing */
+    text-align: left;
+  }
 `;
 
 const GoButton = styled.button`

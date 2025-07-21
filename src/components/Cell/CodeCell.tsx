@@ -20,7 +20,7 @@ const CodeEditor = styled.div<{ $collapsed: boolean }>`
 `;
 
 const CollapsedPreview = styled.div`
-  padding: 8px;
+  padding: 4px; /* Reduced from 8px to minimize whitespace */
   background: #f8f9fa;
   border: 1px solid #e1e5e9;
   border-radius: 4px;
@@ -93,9 +93,9 @@ const CodeCell: React.FC<CodeCellProps> = ({ cell }) => {
 
   return (
     <CodeCellWrapper>
-      {cell.executionOrder && (
+      {cell.executionCount && (
         <ExecutionNumber>
-          [{cell.executionOrder}]
+          [{cell.executionCount}]
         </ExecutionNumber>
       )}
       

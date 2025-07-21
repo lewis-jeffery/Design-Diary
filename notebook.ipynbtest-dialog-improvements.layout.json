@@ -1,0 +1,41 @@
+{
+  "version": "1.0.0",
+  "notebook_id": "41ec3d4b-10bf-461b-8d2a-c7159901440f",
+  "canvas": {
+    "zoom": 1,
+    "pan": {
+      "x": 0,
+      "y": 0
+    },
+    "gridSize": 20,
+    "snapToGrid": true,
+    "pageSize": {
+      "width": 794,
+      "height": 1123,
+      "name": "A4"
+    },
+    "orientation": "landscape",
+    "pages": 1,
+    "pageMargin": 50
+  },
+  "cells": {
+    "9a5bd87b-2229-4100-8003-0f7c19f9be24": {
+      "position": {
+        "x": 150,
+        "y": 150
+      },
+      "size": {
+        "width": 300,
+        "height": 200
+      },
+      "collapsed_size": {
+        "width": 300,
+        "height": 50
+      },
+      "z_index": 10,
+      "cell_type": "code",
+      "rendering_hints": {}
+    }
+  },
+  "execution_history": []
+}

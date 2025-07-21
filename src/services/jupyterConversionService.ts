@@ -104,9 +104,6 @@ export class JupyterConversionService {
     };
 
     // Convert Jupyter cells back to Design Diary cells using layout info
-    // Track execution order for code cells to maintain logical sequence
-    let codeExecutionOrder = 1;
-    
     for (const jupyterCell of notebook.cells) {
       const cellId = jupyterCell.metadata.design_diary?.cell_id || jupyterCell.id || this.generateId();
       const cellLayout = layout.cells[cellId];
@@ -114,20 +111,24 @@ export class JupyterConversionService {
       console.log('🔧 DEBUG: Processing Jupyter cell:', cellId, jupyterCell.cell_type, 'hasOutputs:', jupyterCell.outputs && jupyterCell.outputs.length > 0, 'hasLayout:', !!cellLayout);
       
       if (cellLayout) {
-        const designDiaryCell = this.convertJupyterToCell(jupyterCell, cellLayout, codeExecutionOrder);
+        const designDiaryCell = this.convertJupyterToCell(jupyterCell, cellLayout);
         if (designDiaryCell) {
-          console.log('🔧 DEBUG: Created Design Diary cell:', designDiaryCell.id, designDiaryCell.type, 'at', designDiaryCell.position);
+          console.log('🔧 DEBUG: Created Design Diary cell:', designDiaryCell.id, designDiaryCell.type, 'at', designDiaryCell.position, 'executionOrder:', designDiaryCell.executionOrder);
           document.cells.push(designDiaryCell);
           
-          // Skip creating output cells during import - they're already stored as separate raw cells in the notebook
-          // The convertJupyterOutputsToDesignDiaryCells method is only used for fresh Jupyter notebooks 
-          // that have outputs in the outputs array but haven't been exported from Design Diary before
+          // Handle output cells for code cells
           if (designDiaryCell.type === 'code' && jupyterCell.cell_type === 'code' && jupyterCell.outputs && jupyterCell.outputs.length > 0) {
             // Check if this is a fresh import (no design_diary metadata) vs re-import of exported notebook
             const hasDesignDiaryMetadata = jupyterCell.metadata.design_diary?.cell_id;
             
-            if (!hasDesignDiaryMetadata) {
-              // This is a fresh Jupyter notebook - create output cells from outputs array
+            // Also check if we already have output cells in the layout for this code cell
+            const hasOutputCellsInLayout = Object.values(layout.cells).some(cellLayout => {
+              return cellLayout.cell_type === 'raw' && 
+                     cellLayout.rendering_hints?.sourceCodeCellId === designDiaryCell.id;
+            });
+            
+            if (!hasDesignDiaryMetadata && !hasOutputCellsInLayout) {
+              // This is a fresh Jupyter notebook with no existing output cells - create output cells from outputs array
               console.log('🔧 DEBUG: Fresh Jupyter import - converting outputs to Design Diary cells for cell:', designDiaryCell.id);
               const outputCells = this.convertJupyterOutputsToDesignDiaryCells(
                 jupyterCell.outputs, 
@@ -139,21 +140,17 @@ export class JupyterConversionService {
               console.log('🔧 DEBUG: Created', outputCells.length, 'output cells for', designDiaryCell.id);
               document.cells.push(...outputCells);
             } else {
-              // This is a re-import of a Design Diary exported notebook - outputs are already separate cells
-              console.log('🔧 DEBUG: Re-importing Design Diary notebook - skipping output conversion for cell:', designDiaryCell.id);
+              // This is a re-import of a Design Diary exported notebook - outputs are already separate cells in layout
+              console.log('🔧 DEBUG: Re-importing Design Diary notebook with existing output cells - skipping output conversion for cell:', designDiaryCell.id);
             }
-          }
-          
-          // Increment execution order only for code cells
-          if (designDiaryCell.type === 'code') {
-            codeExecutionOrder++;
           }
         }
       }
     }
 
-    // Post-process to resolve pending sourceCodeCellId references
+    // Post-process to resolve pending sourceCodeCellId references and legacy output cells
     this.resolvePendingOutputCellReferences(document);
+    this.resolveLegacyOutputCellReferences(document);
 
     console.log('🔧 DEBUG: Final document has', document.cells.length, 'cells');
     document.cells.forEach((cell, index) => {
@@ -255,26 +252,21 @@ export class JupyterConversionService {
   /**
    * Convert Jupyter cell back to Design Diary cell using layout information
    */
-  private static convertJupyterToCell(jupyterCell: JupyterCell, layout: any, codeExecutionOrder?: number): Cell | null {
+  private static convertJupyterToCell(jupyterCell: JupyterCell, layout: any): Cell | null {
     const cellId = jupyterCell.metadata.design_diary?.cell_id || jupyterCell.id || this.generateId();
     
     // Assign execution order based on design concept: code cells get logical sequence numbers
     let executionOrder: number | null = null;
     if (jupyterCell.cell_type === 'code') {
-      // For code cells, use the provided execution order (design sequence)
+      // For code cells, preserve the original execution order from metadata
       // This represents the intended logical flow, not execution history
-      if (codeExecutionOrder !== undefined) {
-        executionOrder = codeExecutionOrder;
-      } else {
-        // Fallback to existing metadata if available
-        const jupyterExecutionCount = jupyterCell.execution_count;
-        const designDiaryExecutionOrder = jupyterCell.metadata.design_diary?.execution_order;
-        
-        if (designDiaryExecutionOrder !== null && designDiaryExecutionOrder !== undefined) {
-          executionOrder = designDiaryExecutionOrder;
-        } else if (jupyterExecutionCount !== null && jupyterExecutionCount !== undefined) {
-          executionOrder = jupyterExecutionCount;
-        }
+      const jupyterExecutionCount = jupyterCell.execution_count;
+      const designDiaryExecutionOrder = jupyterCell.metadata.design_diary?.execution_order;
+      
+      if (designDiaryExecutionOrder !== null && designDiaryExecutionOrder !== undefined) {
+        executionOrder = designDiaryExecutionOrder;
+      } else if (jupyterExecutionCount !== null && jupyterExecutionCount !== undefined) {
+        executionOrder = jupyterExecutionCount;
       }
     }
     // For markdown/raw cells, executionOrder stays null (they don't participate in execution flow)
@@ -383,18 +375,55 @@ export class JupyterConversionService {
       
       // Check if this raw cell is an output cell by looking at its metadata
       const originalType = jupyterCell.metadata.design_diary?.original_type;
-      if (originalType === 'raw') {
-        // This is an output cell - we need to link it to its source code cell
-        // Look for a code cell that would logically be the source of this output
-        // This is a heuristic based on execution order and positioning
-        const executionOrder = jupyterCell.metadata.design_diary?.execution_order;
-        if (executionOrder !== null && executionOrder !== undefined) {
-          // Mark this as an output cell with metadata to help identify its source
-          rawCell.sourceCodeCellId = `pending-${executionOrder}`; // Will be resolved later
-          rawCell.outputType = 'text';
-          rawCell.success = true;
-          rawCell.executionTime = new Date().toISOString();
+      const executionOrder = jupyterCell.metadata.design_diary?.execution_order;
+      
+      if (originalType === 'raw' && executionOrder !== null && executionOrder !== undefined) {
+        // This is an output cell - mark it with pending reference to be resolved later
+        rawCell.sourceCodeCellId = `pending-${executionOrder}`;
+        rawCell.success = true;
+        rawCell.executionTime = new Date().toISOString();
+        
+        // Determine output type based on layout rendering hints
+        const renderingHints = layout.rendering_hints || {};
+        let outputType = 'text'; // default
+        
+        // PRIMARY: Use outputType from layout.json if available (robust approach)
+        if (renderingHints.outputType) {
+          outputType = renderingHints.outputType;
+          console.log('🔧 DEBUG: Using outputType from layout.json:', outputType, 'for cell:', cellId);
         }
+        // FALLBACK: For legacy notebooks without outputType in layout, use content-based detection
+        else if (renderingHints.sourceCodeCellId) {
+          console.log('🔧 DEBUG: Legacy output cell detected, using content-based detection for:', cellId);
+          
+          // Check for explicit image indicators
+          if (content.includes('data:image/') || content.includes('<img') || renderingHints.format === 'image') {
+            outputType = 'image';
+          } else if (content.includes('Error:') || content.includes('Traceback')) {
+            outputType = 'error';
+          } else if (content.includes('✓') && content.includes('success')) {
+            outputType = 'success';
+          }
+          // For empty content with outputs array, assume image
+          else if (content.trim() === '' && renderingHints.outputs) {
+            outputType = 'image';
+          }
+          // LAST RESORT: Use size heuristics only for truly legacy cases
+          else if (content.trim() === '' && layout.size && layout.size.width >= 400 && layout.size.height >= 300) {
+            outputType = 'image';
+            rawCell.needsSourceResolution = true;
+            console.log('🔧 DEBUG: Using size heuristic as last resort for legacy cell:', cellId);
+          }
+        }
+        
+        // Restore outputs array for image cells
+        if (outputType === 'image' && renderingHints.outputs) {
+          rawCell.outputs = renderingHints.outputs;
+        }
+        
+        rawCell.outputType = outputType;
+        
+        console.log('🔧 DEBUG: Found output cell', cellId, 'with execution order', executionOrder, 'outputType:', outputType, 'content:', content.substring(0, 50) + '...');
       }
       
       return rawCell;
@@ -428,6 +457,19 @@ export class JupyterConversionService {
     // Add type-specific layout properties
     const cellWithHints = cell as any;
     const renderingHints = cellWithHints.renderingHints || {};
+
+    // For output cells, preserve output-specific metadata
+    if (cell.type === 'raw' && cellWithHints.sourceCodeCellId) {
+      renderingHints.sourceCodeCellId = cellWithHints.sourceCodeCellId;
+      renderingHints.outputType = cellWithHints.outputType || 'text'; // Ensure outputType is always saved
+      renderingHints.success = cellWithHints.success;
+      renderingHints.executionTime = cellWithHints.executionTime;
+      
+      // Preserve outputs array for image cells
+      if (cellWithHints.outputs) {
+        renderingHints.outputs = cellWithHints.outputs;
+      }
+    }
 
     return {
       ...baseLayout,
@@ -664,6 +706,57 @@ export class JupyterConversionService {
           delete cellWithMetadata.outputType;
           console.log('🔧 DEBUG: Could not resolve output cell', cell.id, 'for execution order', executionOrder);
         }
+      }
+    }
+  }
+
+  /**
+   * Resolve legacy output cells that need source code cell resolution
+   */
+  private static resolveLegacyOutputCellReferences(document: DesignDiaryDocument): void {
+    // Find all code cells for proximity matching
+    const codeCells = document.cells.filter(cell => cell.type === 'code');
+    
+    // Find all legacy output cells that need source resolution
+    const legacyOutputCells = document.cells.filter(cell => {
+      const cellWithMetadata = cell as any;
+      return cell.type === 'raw' && cellWithMetadata.needsSourceResolution;
+    });
+    
+    for (const outputCell of legacyOutputCells) {
+      const cellWithMetadata = outputCell as any;
+      
+      // Find the closest code cell (heuristic approach)
+      let closestCodeCell = null;
+      let minDistance = Infinity;
+      
+      for (const codeCell of codeCells) {
+        // Calculate distance between output cell and code cell
+        const dx = outputCell.position.x - (codeCell.position.x + codeCell.size.width);
+        const dy = outputCell.position.y - codeCell.position.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        // Prefer code cells that are to the left of the output cell (typical layout)
+        if (dx > 0 && distance < minDistance) {
+          minDistance = distance;
+          closestCodeCell = codeCell;
+        }
+      }
+      
+      if (closestCodeCell) {
+        cellWithMetadata.sourceCodeCellId = closestCodeCell.id;
+        cellWithMetadata.success = true;
+        cellWithMetadata.executionTime = new Date().toISOString();
+        
+        // Clean up the temporary flag
+        delete cellWithMetadata.needsSourceResolution;
+        
+        console.log('🔧 DEBUG: Resolved legacy output cell', outputCell.id, 'to code cell', closestCodeCell.id, 'distance:', minDistance);
+      } else {
+        // If we can't find a suitable code cell, clean up the metadata
+        delete cellWithMetadata.needsSourceResolution;
+        delete cellWithMetadata.outputType;
+        console.log('🔧 DEBUG: Could not resolve legacy output cell', outputCell.id, '- no suitable code cell found');
       }
     }
   }

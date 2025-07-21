@@ -71,6 +71,13 @@ const PathInput = styled.input`
   border-radius: 4px;
   font-family: monospace;
   font-size: 12px;
+  text-align: right; /* Right-justify for long pathnames */
+  direction: rtl; /* Right-to-left text direction to show end of path */
+  
+  &:focus {
+    direction: ltr; /* Switch to normal direction when editing */
+    text-align: left;
+  }
 `;
 
 const GoButton = styled.button`
@@ -331,12 +338,25 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({
                     key={recentFile.path}
                     $isSelected={selectedFile === recentFile.path}
                     onClick={() => setSelectedFile(recentFile.path)}
+                    style={{ flexDirection: 'column', alignItems: 'flex-start', padding: '8px 20px' }}
                   >
-                    <FileIcon>📓</FileIcon>
-                    {recentFile.name}
-                    <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#6c757d' }}>
-                      {new Date(recentFile.lastOpened).toLocaleDateString()}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
+                      <FileIcon>📓</FileIcon>
+                      <span style={{ fontWeight: '500' }}>{recentFile.name}</span>
+                      <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#6c757d' }}>
+                        {new Date(recentFile.lastOpened).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <div style={{ 
+                      fontSize: '11px', 
+                      color: '#6c757d', 
+                      fontFamily: 'monospace',
+                      marginLeft: '28px',
+                      marginTop: '2px',
+                      wordBreak: 'break-all'
+                    }}>
+                      {recentFile.path}
+                    </div>
                   </FileItem>
                 ))}
               </RecentFilesList>

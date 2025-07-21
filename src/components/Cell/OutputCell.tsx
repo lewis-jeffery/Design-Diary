@@ -5,31 +5,30 @@ import { OutputCell as OutputCellType, RichOutput } from '../../types';
 const OutputCellContainer = styled.div`
   width: 100%;
   height: 100%;
-  display: flex;
-  flex-direction: column;
+  position: relative;
 `;
 
 const OutputArea = styled.div<{ $success?: boolean; $scrollable?: boolean }>`
-  flex: 1;
-  padding: 12px;
+  position: absolute;
+  top: 40px; /* Start below header */
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 4px; /* Reduced from 12px to minimize whitespace */
   background: ${props => 
     props.$success === false ? '#fff5f5' : 
     props.$success === true ? '#f0fff4' : '#f8f9fa'};
   border: 1px solid ${props => 
     props.$success === false ? '#fed7d7' : 
     props.$success === true ? '#c6f6d5' : '#e1e5e9'};
-  border-radius: 6px;
+  border-radius: 0 0 6px 6px;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 13px;
   white-space: pre-wrap;
   line-height: 1.4;
-  min-height: 0;
   
   /* Dynamic sizing based on scroll mode */
   ${props => props.$scrollable ? `
-    height: calc(100% - 40px); /* Use available height minus header in scroll mode */
-    min-height: 200px; /* Minimum height for usability */
-    max-height: calc(100% - 40px); /* Constrain to available space */
     overflow-y: auto;
     overflow-x: auto;
     
@@ -58,9 +57,7 @@ const OutputArea = styled.div<{ $success?: boolean; $scrollable?: boolean }>`
       background: #f1f1f1;
     }
   ` : `
-    height: calc(100% - 40px); /* Use available height minus header in full mode */
     overflow: visible;
-    max-height: none;
     
     /* Hide scrollbars in full mode */
     &::-webkit-scrollbar {
@@ -92,7 +89,7 @@ const OutputArea = styled.div<{ $success?: boolean; $scrollable?: boolean }>`
 `;
 
 const OutputHeader = styled.div<{ $success?: boolean; $selected?: boolean }>`
-  padding: 6px 12px;
+  padding: 3px 6px; /* Reduced from 6px 12px to minimize whitespace */
   background: ${props => 
     props.$success === false ? '#fed7d7' : 
     props.$success === true ? '#c6f6d5' : '#e1e5e9'};

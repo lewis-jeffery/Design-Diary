@@ -92,6 +92,12 @@ export interface DesignDiaryCellLayout {
   size: { width: number; height: number };
   collapsed_size: { width: number; height: number };
   z_index: number;
+  cell_type?: string; // The original Design Diary cell type
+  rendering_hints?: {
+    contentType?: string;
+    sourceCodeCellId?: string;
+    [key: string]: any;
+  };
   // Type-specific layout properties
   text_properties?: {
     font_size: number;

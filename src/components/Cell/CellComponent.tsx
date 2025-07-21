@@ -41,19 +41,23 @@ const CellContainer = styled.div<{
   `}
 `;
 
-const CellContent = styled.div<{ $collapsed: boolean; $isOutputCell: boolean }>`
+const CellContent = styled.div<{ $collapsed: boolean; $isOutputCell: boolean; $selected: boolean }>`
   width: 100%;
-  height: ${props => props.$collapsed ? 'auto' : 'calc(100% - 40px)'}; /* Account for toolbar */
-  padding: 4px 8px; /* Reduced top/bottom padding to 4px, keep side padding at 8px */
+  height: ${props => {
+    if (props.$collapsed) return 'auto';
+    // Only reserve space for toolbar when cell is selected (toolbar is visible)
+    return props.$selected ? 'calc(100% - 40px)' : '100%';
+  }};
+  padding: 2px; /* Minimal padding - reduced from 4px 8px */
   overflow: ${props => 
     props.$collapsed ? 'hidden' : 
     props.$isOutputCell ? 'visible' : 'auto'
   };
   
-  /* For output cells, adjust dimensions to account for consistent padding */
+  /* For output cells, adjust dimensions to account for minimal padding */
   ${props => props.$isOutputCell && `
-    width: calc(100% - 16px); /* Account for 8px padding on each side */
-    height: calc(100% - 48px); /* Account for toolbar + 4px padding top/bottom */
+    width: calc(100% - 4px); /* Account for 2px padding on each side */
+    height: ${props.$selected ? 'calc(100% - 44px)' : 'calc(100% - 4px)'}; /* Reserve toolbar space only when selected */
   `}
 `;
 
@@ -346,7 +350,7 @@ const CellComponent: React.FC<CellComponentProps> = ({ cell }) => {
       
       <CellToolbar cell={cell} />
       
-      <CellContent $collapsed={cell.collapsed} $isOutputCell={cell.type === 'raw'}>
+      <CellContent $collapsed={cell.collapsed} $isOutputCell={cell.type === 'raw'} $selected={cell.selected}>
         {renderCellContent()}
       </CellContent>
       

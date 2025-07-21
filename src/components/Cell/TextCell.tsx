@@ -70,12 +70,12 @@ const renderMarkdown = (text: string, documentId?: string): string => {
 const TextCellContainer = styled.div`
   width: 100%;
   height: 100%;
-  display: flex;
-  flex-direction: column;
+  position: relative;
 `;
 
 const TextEditor = styled.div`
-  flex: 1;
+  width: 100%;
+  height: 100%;
   border: 1px solid #e1e5e9;
   border-radius: 4px;
   overflow: hidden;
@@ -86,7 +86,7 @@ const TextArea = styled.textarea<{ fontSize: number; fontFamily: string }>`
   height: 100%;
   border: none;
   outline: none;
-  padding: 4px 8px;
+  padding: 2px 4px; /* Reduced from 4px 8px to minimize whitespace */
   font-size: ${props => props.fontSize}px;
   font-family: ${props => props.fontFamily};
   resize: none;
@@ -132,7 +132,7 @@ const ControlButton = styled.button`
 const RenderedContent = styled.div<{ fontSize: number; fontFamily: string }>`
   width: 100%;
   height: 100%;
-  padding: 4px 8px;
+  padding: 2px 4px; /* Reduced from 4px 8px to minimize whitespace */
   font-size: ${props => props.fontSize}px;
   font-family: ${props => props.fontFamily};
   overflow: auto;

@@ -437,14 +437,9 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
     // Clear any existing selection first
     get().clearSelection();
     
-    // Calculate execution order for code cells based on design concept
+    // Do NOT assign execution order when creating cells
+    // Execution order should only be assigned when cells are actually executed
     let executionOrder: number | null = null;
-    if (type === 'code') {
-      // Count existing code cells to determine the next logical execution order
-      const existingCodeCells = document.cells.filter(cell => cell.type === 'code');
-      executionOrder = existingCodeCells.length + 1;
-    }
-    // For non-code cells, executionOrder stays null
     
     const baseCell = {
       id: uuidv4(),
@@ -858,34 +853,25 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
     const newExecutionCount = globalExecutionCount + 1;
     set({ isExecuting: true, globalExecutionCount: newExecutionCount });
 
-    // Find any existing output cells for this code cell to preserve their positions
+    // Find any existing output cells for this code cell
     const currentDocument = get().document;
     const existingOutputCells = currentDocument.cells.filter(c => {
       if (c.type !== 'raw') return false;
-      
       const rawCell = c as any;
-      // Check both sourceCodeCellId and if it's an output cell with the same execution order
-      return rawCell.sourceCodeCellId === cellId || 
-             (rawCell.outputType && c.executionOrder === cell.executionOrder);
+      return rawCell.sourceCodeCellId === cellId;
     });
     
-    // Store positions and sizes of existing output cells
-    const existingOutputPositions = existingOutputCells.map(cell => ({
+    // Store positions of existing output cells for reuse (simplified)
+    const savedPositions = existingOutputCells.map((cell, index) => ({
       position: cell.position,
       size: cell.size,
-      outputType: (cell as any).outputType || 'text'
+      index: index
     }));
     
-    // Remove existing output cells using the same criteria as finding them
+    // Remove existing output cells
     if (existingOutputCells.length > 0) {
-      const cellsWithoutOldOutputs = currentDocument.cells.filter(c => {
-        if (c.type !== 'raw') return true;
-        
-        const rawCell = c as any;
-        // Use the same logic as finding existing output cells to ensure complete removal
-        return !(rawCell.sourceCodeCellId === cellId || 
-                (rawCell.outputType && c.executionOrder === cell.executionOrder));
-      });
+      const existingOutputIds = new Set(existingOutputCells.map(c => c.id));
+      const cellsWithoutOldOutputs = currentDocument.cells.filter(c => !existingOutputIds.has(c.id));
       
       set({
         document: {
@@ -911,55 +897,46 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
       const hasRichOutputs = result.outputs && Array.isArray(result.outputs) && result.outputs.length > 0;
 
 
-      // Create output cells for different types of output
-      // Use the current state after removal, not a fresh get() call
+      // Create output cells - simplified position reuse
       const currentState = get();
       let newCells = [...currentState.document.cells];
-      let outputYOffset = 0;
+      let outputIndex = 0; // Track which saved position to use
 
       // Add text output if present
       if (hasTextOutput || hasErrorOutput) {
         const textOutputContent = hasErrorOutput ? result.stderr : result.stdout;
-        const outputType = hasErrorOutput ? 'error' : 'text';
         
-        // Try to find existing position for this output type
-        const existingPosition = existingOutputPositions.find(pos => pos.outputType === outputType);
+        // Use saved position if available, otherwise default position
+        const savedPos = savedPositions[outputIndex];
+        const position = savedPos ? savedPos.position : {
+          x: cell.position.x + cell.size.width + 20,
+          y: cell.position.y + (outputIndex * 220),
+        };
+        const size = savedPos ? savedPos.size : { 
+          width: 400, 
+          height: Math.max(100, Math.min(300, textOutputContent.split('\n').length * 20 + 40)) 
+        };
         
         const textOutputCell: Cell = {
           id: uuidv4(),
           type: 'raw',
-          position: existingPosition ? existingPosition.position : {
-            x: cell.position.x + cell.size.width + 20,
-            y: cell.position.y + outputYOffset,
-          },
-          size: existingPosition ? existingPosition.size : { 
-            width: 400, 
-            height: Math.max(100, Math.min(300, textOutputContent.split('\n').length * 20 + 40)) 
-          },
+          position,
+          size,
           executionOrder: null,
           collapsed: false,
           collapsedSize: { width: 400, height: 50 },
           selected: false,
-          zIndex: newCells.length + 10, // Ensure output cells are also above pages
+          zIndex: newCells.length + 10,
           content: textOutputContent,
           format: 'text',
         } as any;
         
         // Mark this as an output cell for this code cell
         (textOutputCell as any).sourceCodeCellId = cellId;
-        (textOutputCell as any).outputType = outputType;
         (textOutputCell as any).success = !hasErrorOutput;
-        (textOutputCell as any).executionTime = new Date().toISOString();
-        
-        // Set the same execution order as the source code cell
-        textOutputCell.executionOrder = cell.executionOrder;
         
         newCells.push(textOutputCell);
-        
-        // Only increment offset if we're using default positioning
-        if (!existingPosition) {
-          outputYOffset += textOutputCell.size.height + 20;
-        }
+        outputIndex++;
       }
 
       // Add rich outputs (images, plots, etc.)
@@ -967,22 +944,28 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
         for (const output of result.outputs) {
           if (output.type === 'image') {
             const imageUrl = `http://localhost:3001/api/outputs/${output.data}`;
+            
+            // Use saved position if available, otherwise default position
+            const savedPos = savedPositions[outputIndex];
+            const position = savedPos ? savedPos.position : {
+              x: cell.position.x + cell.size.width + 20,
+              y: cell.position.y + (outputIndex * 220),
+            };
+            const size = savedPos ? savedPos.size : { 
+              width: Math.min(500, output.metadata?.width || 400), 
+              height: Math.min(400, output.metadata?.height || 300) 
+            };
+            
             const imageOutputCell: Cell = {
               id: uuidv4(),
               type: 'raw',
-              position: {
-                x: cell.position.x + cell.size.width + 20,
-                y: cell.position.y + outputYOffset,
-              },
-              size: { 
-                width: Math.min(500, output.metadata?.width || 400), 
-                height: Math.min(400, output.metadata?.height || 300) 
-              },
+              position,
+              size,
               executionOrder: null,
               collapsed: false,
               collapsedSize: { width: 400, height: 50 },
               selected: false,
-              zIndex: newCells.length,
+              zIndex: newCells.length + 10,
               content: '', // No text content for image cells
               format: 'text',
             } as any;
@@ -996,45 +979,42 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
             
             // Mark this as an output cell for this code cell
             (imageOutputCell as any).sourceCodeCellId = cellId;
-            (imageOutputCell as any).outputType = 'image';
             (imageOutputCell as any).success = true;
-            (imageOutputCell as any).executionTime = new Date().toISOString();
-            
-            // Set the same execution order as the source code cell
-            imageOutputCell.executionOrder = cell.executionOrder;
             
             newCells.push(imageOutputCell);
-            outputYOffset += imageOutputCell.size.height + 20;
+            outputIndex++;
           }
         }
       }
 
       // If no outputs at all, create a simple success message
       if (!hasTextOutput && !hasErrorOutput && !hasRichOutputs) {
+        // Use saved position if available, otherwise default position
+        const savedPos = savedPositions[outputIndex];
+        const position = savedPos ? savedPos.position : {
+          x: cell.position.x + cell.size.width + 20,
+          y: cell.position.y + (outputIndex * 220),
+        };
+        const size = savedPos ? savedPos.size : { width: 300, height: 60 };
+        
         const successOutputCell: Cell = {
           id: uuidv4(),
           type: 'raw',
-          position: {
-            x: cell.position.x + cell.size.width + 20,
-            y: cell.position.y,
-          },
-          size: { width: 300, height: 60 },
+          position,
+          size,
           executionOrder: null,
           collapsed: false,
           collapsedSize: { width: 300, height: 50 },
           selected: false,
-          zIndex: newCells.length,
+          zIndex: newCells.length + 10,
           content: '✓ Execution completed successfully',
           format: 'text',
         } as any;
         
         (successOutputCell as any).sourceCodeCellId = cellId;
-        (successOutputCell as any).outputType = 'success';
-        
-        // Set the same execution order as the source code cell
-        successOutputCell.executionOrder = cell.executionOrder;
         
         newCells.push(successOutputCell);
+        outputIndex++;
       }
 
       // Update the document with new cells

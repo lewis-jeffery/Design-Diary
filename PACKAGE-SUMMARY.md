@@ -64,22 +64,43 @@ design-diary/
 
 ### Setup and Deployment Scripts
 ```
-├── setup.sh                     # Automated setup script
+├── setup-new-machine.sh         # Complete new machine setup
+├── sync-start.sh                # Daily startup with sync
+├── sync-end.sh                  # Daily shutdown with sync
 ├── start-dev.sh                 # Development startup script
+├── restart.sh                   # Restart application servers
+├── cleanup.sh                   # Clean up processes and temp files
 └── docs/                        # Additional documentation
+```
+
+### Synchronization Files
+```
+├── SYNCHRONIZATION-GUIDE.md     # Complete multi-machine sync guide
+├── SYNC-QUICK-START.md          # Quick reference for daily workflow
+├── .vscode/extensions.json      # Recommended VS Code extensions
+├── .devcontainer/devcontainer.json # GitHub Codespaces configuration
+└── server/requirements.txt      # Python dependencies for consistency
 ```
 
 ## 🚀 Quick Installation
 
-### Method 1: Automated Setup (Recommended)
+### Method 1: New Machine Setup (Recommended)
 ```bash
 git clone https://github.com/your-username/design-diary.git
 cd design-diary
-chmod +x setup.sh
-./setup.sh --start
+./setup-new-machine.sh
 ```
 
-### Method 2: Manual Setup
+### Method 2: Daily Development Workflow
+```bash
+# Starting work (pulls latest changes and starts)
+./sync-start.sh
+
+# Ending work (saves and pushes changes)
+./sync-end.sh
+```
+
+### Method 3: Manual Setup
 ```bash
 git clone https://github.com/your-username/design-diary.git
 cd design-diary
@@ -88,11 +109,17 @@ cd server && npm install && cd ..
 ./start-dev.sh
 ```
 
-### Method 3: Docker
+### Method 4: Docker
 ```bash
 git clone https://github.com/your-username/design-diary.git
 cd design-diary
 docker-compose up --build
+```
+
+### Method 5: GitHub Codespaces
+1. Go to the GitHub repository
+2. Click "Code" → "Codespaces" → "Create codespace"
+3. Everything is pre-configured automatically
 ```
 
 ## ✨ Key Features Implemented

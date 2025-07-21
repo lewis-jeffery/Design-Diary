@@ -1,0 +1,46 @@
+{
+  "name": "Design Diary Development",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:18",
+  "features": {
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.11"
+    },
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+  "postCreateCommand": "npm install && cd server && npm install && cd .. && chmod +x *.sh",
+  "forwardPorts": [3000, 3001],
+  "portsAttributes": {
+    "3000": {
+      "label": "Design Diary Frontend",
+      "onAutoForward": "notify"
+    },
+    "3001": {
+      "label": "Design Diary Backend",
+      "onAutoForward": "silent"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "continue.continue",
+        "ms-python.python",
+        "ms-vscode.vscode-typescript-next",
+        "esbenp.prettier-vscode",
+        "ms-python.pylint",
+        "github.copilot",
+        "ms-vscode.vscode-json",
+        "ms-vscode.vscode-eslint"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "typescript.preferences.quoteStyle": "single",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+          "source.fixAll.eslint": true
+        }
+      }
+    }
+  },
+  "remoteUser": "node",
+  "workspaceFolder": "/workspaces/design-diary"
+}

@@ -1,0 +1,31 @@
+# Design Diary Python Server Dependencies
+# Core web framework
+flask==2.3.3
+flask-cors==4.0.0
+
+# Python execution and subprocess management
+subprocess32==3.5.4; python_version < '3.0'
+
+# Data science and visualization (commonly used in notebooks)
+numpy==1.24.3
+pandas==2.0.3
+matplotlib==3.7.2
+seaborn==0.12.2
+plotly==5.15.0
+
+# Jupyter ecosystem compatibility
+jupyter==1.0.0
+ipython==8.14.0
+ipykernel==6.25.0
+
+# Image processing
+Pillow==10.0.0
+
+# Scientific computing
+scipy==1.11.1
+
+# Development and debugging
+python-dotenv==1.0.0
+
+# File handling and utilities
+pathlib2==2.3.7; python_version < '3.4'

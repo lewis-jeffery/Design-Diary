@@ -57,6 +57,7 @@ interface StoreActions {
   updateCell: (cellId: string, updates: Partial<Cell>) => void;
   deleteCell: (cellId: string) => void;
   duplicateCell: (cellId: string) => void;
+  renumberCodeCells: () => void;
   
   // Position and size actions
   updateCellPosition: (cellId: string, position: Position) => void;
@@ -394,6 +395,41 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
     }
   },
 
+  // Helper function to renumber all code cells sequentially
+  renumberCodeCells: () => {
+    const { document } = get();
+    const codeCells = document.cells
+      .filter(cell => cell.type === 'code')
+      .sort((a, b) => {
+        // Sort by current execution order, then by position (top to bottom, left to right)
+        if (a.executionOrder !== null && b.executionOrder !== null) {
+          return a.executionOrder - b.executionOrder;
+        }
+        if (a.executionOrder !== null) return -1;
+        if (b.executionOrder !== null) return 1;
+        // If both are null, sort by position
+        if (a.position.y !== b.position.y) return a.position.y - b.position.y;
+        return a.position.x - b.position.x;
+      });
+
+    // Renumber sequentially
+    const updatedCells = document.cells.map(cell => {
+      if (cell.type === 'code') {
+        const index = codeCells.findIndex(c => c.id === cell.id);
+        return { ...cell, executionOrder: index + 1 };
+      }
+      return cell;
+    });
+
+    set({
+      document: {
+        ...document,
+        cells: updatedCells,
+        modified: new Date().toISOString(),
+      },
+    });
+  },
+
   // Cell actions
   addCell: (type: Cell['type'], position: Position, renderingHint?: string) => {
     const { document } = get();
@@ -404,12 +440,9 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
     // Calculate execution order for code cells based on design concept
     let executionOrder: number | null = null;
     if (type === 'code') {
-      // Find the highest execution order among existing code cells and increment
-      const codeExecutionOrders = document.cells
-        .filter(cell => cell.type === 'code' && cell.executionOrder !== null)
-        .map(cell => cell.executionOrder as number);
-      
-      executionOrder = codeExecutionOrders.length > 0 ? Math.max(...codeExecutionOrders) + 1 : 1;
+      // Count existing code cells to determine the next logical execution order
+      const existingCodeCells = document.cells.filter(cell => cell.type === 'code');
+      executionOrder = existingCodeCells.length + 1;
     }
     // For non-code cells, executionOrder stays null
     
@@ -595,6 +628,9 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
 
   deleteCell: (cellId: string) => {
     const { document } = get();
+    const cellToDelete = document.cells.find(cell => cell.id === cellId);
+    const wasCodeCell = cellToDelete?.type === 'code';
+    
     set({
       document: {
         ...document,
@@ -602,6 +638,11 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
         modified: new Date().toISOString(),
       },
     });
+    
+    // If we deleted a code cell, renumber all remaining code cells
+    if (wasCodeCell) {
+      setTimeout(() => get().renumberCodeCells(), 0);
+    }
   },
 
   duplicateCell: (cellId: string) => {
@@ -615,7 +656,7 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
           x: cellToDuplicate.position.x + 20,
           y: cellToDuplicate.position.y + 20,
         },
-        executionOrder: null, // Duplicated cells haven't been executed yet
+        executionOrder: cellToDuplicate.type === 'code' ? null : cellToDuplicate.executionOrder, // Code cells get renumbered, others keep their order
         selected: false,
       };
 
@@ -626,6 +667,11 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
           modified: new Date().toISOString(),
         },
       });
+      
+      // If we duplicated a code cell, renumber all code cells to maintain sequence
+      if (cellToDuplicate.type === 'code') {
+        setTimeout(() => get().renumberCodeCells(), 0);
+      }
     }
   },
 
@@ -814,9 +860,14 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
 
     // Find any existing output cells for this code cell to preserve their positions
     const currentDocument = get().document;
-    const existingOutputCells = currentDocument.cells.filter(c => 
-      c.type === 'raw' && (c as any).sourceCodeCellId === cellId
-    );
+    const existingOutputCells = currentDocument.cells.filter(c => {
+      if (c.type !== 'raw') return false;
+      
+      const rawCell = c as any;
+      // Check both sourceCodeCellId and if it's an output cell with the same execution order
+      return rawCell.sourceCodeCellId === cellId || 
+             (rawCell.outputType && c.executionOrder === cell.executionOrder);
+    });
     
     // Store positions and sizes of existing output cells
     const existingOutputPositions = existingOutputCells.map(cell => ({
@@ -825,11 +876,16 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
       outputType: (cell as any).outputType || 'text'
     }));
     
-    // Remove existing output cells
+    // Remove existing output cells using the same criteria as finding them
     if (existingOutputCells.length > 0) {
-      const cellsWithoutOldOutputs = currentDocument.cells.filter(c => 
-        !(c.type === 'raw' && (c as any).sourceCodeCellId === cellId)
-      );
+      const cellsWithoutOldOutputs = currentDocument.cells.filter(c => {
+        if (c.type !== 'raw') return true;
+        
+        const rawCell = c as any;
+        // Use the same logic as finding existing output cells to ensure complete removal
+        return !(rawCell.sourceCodeCellId === cellId || 
+                (rawCell.outputType && c.executionOrder === cell.executionOrder));
+      });
       
       set({
         document: {

@@ -43,8 +43,9 @@ A modern, visual interface for creating and editing Jupyter notebooks with a can
 - **Node.js** (v16 or higher)
 - **Python** (v3.8 or higher)
 - **npm** or **yarn**
+- **Git** (for version control and synchronization)
 
-### Installation
+### New Machine Setup
 
 1. **Clone the repository**
    ```bash
@@ -52,7 +53,19 @@ A modern, visual interface for creating and editing Jupyter notebooks with a can
    cd design-diary
    ```
 
-2. **Install dependencies**
+2. **Automated setup (Recommended)**
+   ```bash
+   # Run the complete setup script
+   ./setup-new-machine.sh
+   ```
+   This script will:
+   - Install all Node.js and Python dependencies
+   - Set up Python virtual environment
+   - Configure executable permissions
+   - Create environment template
+   - Validate the installation
+
+3. **Manual setup (Alternative)**
    ```bash
    # Install frontend dependencies
    npm install
@@ -60,16 +73,22 @@ A modern, visual interface for creating and editing Jupyter notebooks with a can
    # Install Python server dependencies
    cd server
    npm install
+   pip install -r requirements.txt
    cd ..
+   
+   # Make scripts executable
+   chmod +x *.sh
    ```
 
-3. **Start the application**
+4. **Start the application**
    ```bash
-   # Option 1: Use the convenient startup script
-   chmod +x start-dev.sh
+   # Option 1: Use sync-aware startup (Recommended)
+   ./sync-start.sh
+   
+   # Option 2: Simple startup
    ./start-dev.sh
    
-   # Option 2: Start manually
+   # Option 3: Manual startup
    # Terminal 1 - Start Python execution server
    cd server && npm start
    
@@ -77,8 +96,22 @@ A modern, visual interface for creating and editing Jupyter notebooks with a can
    npm start
    ```
 
-4. **Open your browser**
+5. **Open your browser**
    Navigate to `http://localhost:3000`
+
+### Multi-Machine Development
+
+For seamless development across multiple machines:
+
+```bash
+# Daily workflow - Starting work
+./sync-start.sh  # Pulls latest changes and starts application
+
+# Daily workflow - Ending work  
+./sync-end.sh    # Saves work and pushes changes
+```
+
+See [SYNC-QUICK-START.md](SYNC-QUICK-START.md) for complete synchronization setup.
 
 ### Shutting Down and Restarting
 

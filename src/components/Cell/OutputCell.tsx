@@ -123,6 +123,8 @@ const ExecutionNumber = styled.div<{ $selected?: boolean }>`
   z-index: 15;
   opacity: ${props => props.$selected ? 1 : 0};
   transition: opacity 0.2s ease-in-out;
+  min-width: 24px;
+  text-align: center;
 `;
 
 const OutputWrapper = styled.div`
@@ -253,9 +255,9 @@ const OutputCell: React.FC<OutputCellProps> = ({ cell, selected = false }) => {
 
   return (
     <OutputCellContainer>
-      {cell.executionCount && (
+      {(cell as any).executionOrder && (
         <ExecutionNumber $selected={selected}>
-          Out [{cell.executionCount}]
+          [{(cell as any).executionOrder}]
         </ExecutionNumber>
       )}
       <OutputWrapper>

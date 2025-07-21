@@ -52,6 +52,8 @@ const ExecutionNumber = styled.div`
   font-weight: 600;
   color: #495057;
   z-index: 15;
+  min-width: 24px;
+  text-align: center;
 `;
 
 interface CodeCellProps {
@@ -91,9 +93,9 @@ const CodeCell: React.FC<CodeCellProps> = ({ cell }) => {
 
   return (
     <CodeCellWrapper>
-      {cell.executionCount && (
+      {cell.executionOrder && (
         <ExecutionNumber>
-          In [{cell.executionCount}]
+          [{cell.executionOrder}]
         </ExecutionNumber>
       )}
       

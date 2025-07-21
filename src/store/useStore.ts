@@ -772,6 +772,7 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
         (textOutputCell as any).outputType = outputType;
         (textOutputCell as any).success = !hasErrorOutput;
         (textOutputCell as any).executionTime = new Date().toISOString();
+        (textOutputCell as any).executionOrder = newExecutionCount; // Match the code cell's execution order
         
         newCells.push(textOutputCell);
         

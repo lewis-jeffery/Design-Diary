@@ -210,9 +210,11 @@ const SaveAsDialog: React.FC<SaveAsDialogProps> = ({
   onSave,
   defaultFilename = 'notebook.ipynb',
   title = 'Save Notebook As...',
-  defaultDirectory = '/Users/lewis/opt/design-diary'
+  defaultDirectory
 }) => {
-  const [currentPath, setCurrentPath] = useState(defaultDirectory);
+  // Use current working directory or fall back to default
+  const initialDirectory = defaultDirectory || '/Users/lewis/opt/design-diary';
+  const [currentPath, setCurrentPath] = useState(initialDirectory);
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [filename, setFilename] = useState(defaultFilename);
   const [loading, setLoading] = useState(false);

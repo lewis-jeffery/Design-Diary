@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { AppState, Cell, Position, Size, DesignDiaryDocument, SavedFileInfo, PageSize } from '../types';
+import { AppState, Cell, Position, Size, DesignDiaryDocument, RecentFile, PageSize } from '../types';
 import { pythonExecutionService } from '../services/pythonExecutionService';
 import { JupyterConversionService } from '../services/jupyterConversionService';
 import { JupyterNotebook, DesignDiaryLayout } from '../types/jupyter';
@@ -50,6 +50,7 @@ interface StoreActions {
   exportToJupyter: () => { notebook: string; layout: string };
   importFromJupyter: (notebook: JupyterNotebook, layout: DesignDiaryLayout) => void;
   registerWorkingDirectory: (documentId: string, workingDirectory: string) => Promise<void>;
+  getCurrentWorkingDirectory: () => Promise<string>;
   
   // Cell actions
   addCell: (type: Cell['type'], position: Position, renderingHint?: string) => void;
@@ -85,7 +86,65 @@ interface StoreActions {
   
   // Collapse actions
   toggleCellCollapse: (cellId: string) => void;
+  
+  // Recent files actions
+  addRecentFile: (filePath: string) => Promise<void>;
+  getRecentFiles: () => Promise<RecentFile[]>;
+  loadRecentFiles: () => Promise<RecentFile[]>;
 }
+
+// Helper function to load recent files from server
+const loadRecentFilesFromServer = async (): Promise<RecentFile[]> => {
+  try {
+    console.log('🔍 Loading recent files from server...');
+    const response = await fetch('http://localhost:3001/api/recent-files');
+    
+    if (!response.ok) {
+      console.warn('❌ Failed to load recent files from server:', response.statusText);
+      return [];
+    }
+    
+    const data = await response.json();
+    console.log('🔍 Server response:', data);
+    
+    if (data.recentFiles && Array.isArray(data.recentFiles)) {
+      console.log('✅ Valid recent files loaded from server:', data.recentFiles.length, data.recentFiles);
+      return data.recentFiles;
+    }
+    
+    console.log('🔍 No recent files found on server');
+    return [];
+  } catch (error) {
+    console.warn('❌ Failed to load recent files from server:', error);
+    return [];
+  }
+};
+
+// Helper function to save recent file to server
+const saveRecentFileToServer = async (filePath: string): Promise<boolean> => {
+  try {
+    console.log('💾 Saving recent file to server:', filePath);
+    const response = await fetch('http://localhost:3001/api/recent-files', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ filePath }),
+    });
+    
+    if (!response.ok) {
+      console.warn('❌ Failed to save recent file to server:', response.statusText);
+      return false;
+    }
+    
+    const data = await response.json();
+    console.log('✅ Recent file saved to server:', data.message);
+    return true;
+  } catch (error) {
+    console.warn('❌ Failed to save recent file to server:', error);
+    return false;
+  }
+};
 
 export const useStore = create<AppState & StoreActions>((set, get) => {
   // Create initial document
@@ -110,6 +169,7 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
     baseFileName: null,
     lastSavedPath: null,
   },
+  recentFiles: [], // Will be loaded asynchronously from server
 
   // Document actions
   createNewDocument: () => {
@@ -202,6 +262,24 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
     } catch (error) {
       console.error('Error registering working directory:', error);
       // Don't throw the error, just log it so the app continues to work
+    }
+  },
+
+  getCurrentWorkingDirectory: async () => {
+    try {
+      const { document } = get();
+      const response = await fetch(`http://localhost:3001/api/working-directory/${document.id}`);
+      
+      if (!response.ok) {
+        console.warn('Failed to get working directory from server, using default');
+        return '/Users/lewis/opt/design-diary';
+      }
+      
+      const result = await response.json();
+      return result.workingDirectory || '/Users/lewis/opt/design-diary';
+    } catch (error) {
+      console.warn('Error getting working directory:', error);
+      return '/Users/lewis/opt/design-diary';
     }
   },
 
@@ -323,15 +401,27 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
     // Clear any existing selection first
     get().clearSelection();
     
+    // Calculate execution order for code cells based on design concept
+    let executionOrder: number | null = null;
+    if (type === 'code') {
+      // Find the highest execution order among existing code cells and increment
+      const codeExecutionOrders = document.cells
+        .filter(cell => cell.type === 'code' && cell.executionOrder !== null)
+        .map(cell => cell.executionOrder as number);
+      
+      executionOrder = codeExecutionOrders.length > 0 ? Math.max(...codeExecutionOrders) + 1 : 1;
+    }
+    // For non-code cells, executionOrder stays null
+    
     const baseCell = {
       id: uuidv4(),
       position,
       size: { width: 300, height: 200 },
-      executionOrder: null, // Only set when cell is actually executed
+      executionOrder, // Set based on logical design sequence for code cells
       collapsed: false,
       collapsedSize: { width: 300, height: 50 },
-      selected: false,
-      zIndex: document.cells.length,
+      selected: true, // Create cell as selected
+      zIndex: document.cells.length + 10, // Ensure cells are always above pages (z-index: 1)
     };
 
     let newCell: Cell;
@@ -415,7 +505,37 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
       modified: new Date().toISOString(),
     };
     
-    set({ document: updatedDocument });
+    // Update both document and selection state at the same time
+    set({ 
+      document: updatedDocument,
+      selectionState: {
+        selectedCellIds: [newCell.id],
+        selectionBox: null,
+      }
+    });
+    
+    // Debug: Log the newly created cell details
+    console.log('🔧 DEBUG: Created new cell:');
+    console.log('  ID:', newCell.id);
+    console.log('  Type:', newCell.type);
+    console.log('  Position x:', newCell.position.x, 'y:', newCell.position.y);
+    console.log('  Size width:', newCell.size.width, 'height:', newCell.size.height);
+    console.log('  Selected:', newCell.selected);
+    console.log('  zIndex:', newCell.zIndex);
+    
+    // Cell is already created as selected and selection state is already updated
+    // No need for additional selectCell call which might cause race conditions
+    
+    // Debug: Log selection state
+    setTimeout(() => {
+      const currentState = get();
+      const selectedCell = currentState.document.cells.find(c => c.id === newCell.id);
+      console.log('🔧 DEBUG: Final cell state:', {
+        id: selectedCell?.id,
+        selected: selectedCell?.selected,
+        selectedCellIds: currentState.selectionState.selectedCellIds
+      });
+    }, 100);
   },
 
   updateCell: (cellId: string, updates: Partial<Cell>) => {
@@ -495,7 +615,7 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
           x: cellToDuplicate.position.x + 20,
           y: cellToDuplicate.position.y + 20,
         },
-        executionOrder: document.cells.length + 1,
+        executionOrder: null, // Duplicated cells haven't been executed yet
         selected: false,
       };
 
@@ -723,10 +843,10 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
     try {
       const result = await pythonExecutionService.executeCode(cell.content, cellId, document.id);
       
-      // Update the code cell with execution count and execution order
+      // Update the code cell with execution count (but preserve execution order)
       get().updateCell(cellId, {
         executionCount: newExecutionCount,
-        executionOrder: newExecutionCount, // Set execution order when cell is executed
+        // Do NOT update executionOrder - it represents design logic, not execution history
       });
 
       // Process outputs - handle both text and rich outputs
@@ -735,8 +855,9 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
       const hasRichOutputs = result.outputs && result.outputs.length > 0;
 
       // Create output cells for different types of output
-      const updatedDocument = get().document;
-      let newCells = [...updatedDocument.cells];
+      // Use the current state after removal, not a fresh get() call
+      const currentState = get();
+      let newCells = [...currentState.document.cells];
       let outputYOffset = 0;
 
       // Add text output if present
@@ -762,7 +883,7 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
           collapsed: false,
           collapsedSize: { width: 400, height: 50 },
           selected: false,
-          zIndex: newCells.length,
+          zIndex: newCells.length + 10, // Ensure output cells are also above pages
           content: textOutputContent,
           format: 'text',
         } as any;
@@ -772,7 +893,9 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
         (textOutputCell as any).outputType = outputType;
         (textOutputCell as any).success = !hasErrorOutput;
         (textOutputCell as any).executionTime = new Date().toISOString();
-        (textOutputCell as any).executionOrder = newExecutionCount; // Match the code cell's execution order
+        
+        // Set the same execution order as the source code cell
+        textOutputCell.executionOrder = cell.executionOrder;
         
         newCells.push(textOutputCell);
         
@@ -820,6 +943,9 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
             (imageOutputCell as any).success = true;
             (imageOutputCell as any).executionTime = new Date().toISOString();
             
+            // Set the same execution order as the source code cell
+            imageOutputCell.executionOrder = cell.executionOrder;
+            
             newCells.push(imageOutputCell);
             outputYOffset += imageOutputCell.size.height + 20;
           }
@@ -848,15 +974,18 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
         (successOutputCell as any).sourceCodeCellId = cellId;
         (successOutputCell as any).outputType = 'success';
         
+        // Set the same execution order as the source code cell
+        successOutputCell.executionOrder = cell.executionOrder;
+        
         newCells.push(successOutputCell);
       }
 
       // Update the document with new cells
       set({
         document: {
-          ...updatedDocument,
+          ...currentState.document,
           cells: newCells,
-          executionHistory: [...updatedDocument.executionHistory, Date.now()],
+          executionHistory: [...currentState.document.executionHistory, Date.now()],
           modified: new Date().toISOString(),
         },
       });
@@ -892,6 +1021,9 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
 
       (errorOutputCell as any).sourceCodeCellId = cellId;
       (errorOutputCell as any).outputType = 'error';
+      
+      // Set the same execution order as the source code cell
+      errorOutputCell.executionOrder = cell.executionOrder;
 
       set({
         document: {
@@ -910,27 +1042,10 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
   },
 
   updateExecutionOrder: () => {
-    const { document } = get();
-    // Sort cells by position (left to right, top to bottom)
-    const sortedCells = [...document.cells].sort((a, b) => {
-      if (Math.abs(a.position.y - b.position.y) < 50) {
-        return a.position.x - b.position.x; // Same row, sort by x
-      }
-      return a.position.y - b.position.y; // Different rows, sort by y
-    });
-
-    const updatedCells = sortedCells.map((cell, index) => ({
-      ...cell,
-      executionOrder: index + 1,
-    }));
-
-    set({
-      document: {
-        ...document,
-        cells: updatedCells,
-        modified: new Date().toISOString(),
-      },
-    });
+    // This function should not automatically assign execution order to all cells
+    // Execution order should only be set when code cells are actually executed
+    // For now, this is a no-op to prevent incorrect execution order assignment
+    console.log('updateExecutionOrder called - execution order is managed by actual cell execution');
   },
 
   // Drag actions
@@ -973,6 +1088,38 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
     if (cell) {
       get().updateCell(cellId, { collapsed: !cell.collapsed });
     }
+  },
+
+  // Recent files actions
+  addRecentFile: async (filePath: string) => {
+    // Save to server-based persistent storage
+    const success = await saveRecentFileToServer(filePath);
+    
+    if (success) {
+      // Reload recent files from server to get updated list
+      const updatedRecentFiles = await loadRecentFilesFromServer();
+      set({ recentFiles: updatedRecentFiles });
+    }
+  },
+
+  getRecentFiles: async () => {
+    // Load fresh data from server
+    const serverRecentFiles = await loadRecentFilesFromServer();
+    const current = get().recentFiles;
+    
+    // Update store if server has different data
+    if (JSON.stringify(serverRecentFiles) !== JSON.stringify(current)) {
+      set({ recentFiles: serverRecentFiles });
+    }
+    
+    return serverRecentFiles;
+  },
+
+  // Load recent files from server (for initialization)
+  loadRecentFiles: async () => {
+    const recentFiles = await loadRecentFilesFromServer();
+    set({ recentFiles });
+    return recentFiles;
   },
 };
 });

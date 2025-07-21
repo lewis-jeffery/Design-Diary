@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
+import { useStore } from '../../store/useStore';
 
 const BrowserOverlay = styled.div`
   position: fixed;
@@ -84,6 +85,32 @@ const GoButton = styled.button`
   &:hover {
     background: #0056b3;
   }
+`;
+
+const ContentContainer = styled.div`
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+`;
+
+const RecentFilesSection = styled.div`
+  border-bottom: 1px solid #dee2e6;
+  background: #f8f9fa;
+`;
+
+const SectionHeader = styled.div`
+  padding: 8px 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6c757d;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+`;
+
+const RecentFilesList = styled.div`
+  max-height: 150px;
+  overflow-y: auto;
 `;
 
 const FileList = styled.div`
@@ -176,11 +203,20 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({
   fileFilter = (file) => file.name.endsWith('.ipynb'),
   title = 'Select Jupyter Notebook'
 }) => {
+  const { getRecentFiles, addRecentFile } = useStore();
   const [currentPath, setCurrentPath] = useState('/Users/lewis');
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recentFiles, setRecentFiles] = useState<any[]>([]);
+  
+  // Load recent files when component opens
+  useEffect(() => {
+    if (isOpen) {
+      getRecentFiles().then(files => setRecentFiles(files));
+    }
+  }, [isOpen, getRecentFiles]);
 
   const loadDirectory = async (path: string) => {
     setLoading(true);
@@ -285,47 +321,74 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({
           )}
         </PathBar>
         
-        <FileList>
-          {loading && (
-            <FileItem>
-              <FileIcon>⏳</FileIcon>
-              Loading...
-            </FileItem>
+        <ContentContainer>
+          {recentFiles.length > 0 && (
+            <RecentFilesSection>
+              <SectionHeader>Recent Files</SectionHeader>
+              <RecentFilesList>
+                {recentFiles.map((recentFile) => (
+                  <FileItem
+                    key={recentFile.path}
+                    $isSelected={selectedFile === recentFile.path}
+                    onClick={() => setSelectedFile(recentFile.path)}
+                  >
+                    <FileIcon>📓</FileIcon>
+                    {recentFile.name}
+                    <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#6c757d' }}>
+                      {new Date(recentFile.lastOpened).toLocaleDateString()}
+                    </span>
+                  </FileItem>
+                ))}
+              </RecentFilesList>
+            </RecentFilesSection>
           )}
           
-          {error && (
-            <FileItem>
-              <FileIcon>❌</FileIcon>
-              Error: {error}
-            </FileItem>
-          )}
+          <div style={{ padding: '8px 0' }}>
+            <SectionHeader>Browse Files</SectionHeader>
+          </div>
           
-          {!loading && !error && filteredFiles.length === 0 && (
-            <FileItem>
-              <FileIcon>📁</FileIcon>
-              No files found
-            </FileItem>
-          )}
-          
-          {!loading && !error && filteredFiles.map((file) => (
-            <FileItem
-              key={file.path}
-              $isDirectory={file.isDirectory}
-              $isSelected={selectedFile === file.path}
-              onClick={() => handleFileClick(file)}
-            >
-              <FileIcon>
-                {file.isDirectory ? '📁' : file.name.endsWith('.ipynb') ? '📓' : '📄'}
-              </FileIcon>
-              {file.name}
-              {!file.isDirectory && (
-                <span style={{ marginLeft: 'auto', fontSize: '12px', color: '#6c757d' }}>
-                  {(file.size / 1024).toFixed(1)} KB
-                </span>
-              )}
-            </FileItem>
-          ))}
-        </FileList>
+          <FileList>
+            {loading && (
+              <FileItem>
+                <FileIcon>⏳</FileIcon>
+                Loading...
+              </FileItem>
+            )}
+            
+            {error && (
+              <FileItem>
+                <FileIcon>❌</FileIcon>
+                Error: {error}
+              </FileItem>
+            )}
+            
+            {!loading && !error && filteredFiles.length === 0 && (
+              <FileItem>
+                <FileIcon>📁</FileIcon>
+                No files found
+              </FileItem>
+            )}
+            
+            {!loading && !error && filteredFiles.map((file) => (
+              <FileItem
+                key={file.path}
+                $isDirectory={file.isDirectory}
+                $isSelected={selectedFile === file.path}
+                onClick={() => handleFileClick(file)}
+              >
+                <FileIcon>
+                  {file.isDirectory ? '📁' : file.name.endsWith('.ipynb') ? '📓' : '📄'}
+                </FileIcon>
+                {file.name}
+                {!file.isDirectory && (
+                  <span style={{ marginLeft: 'auto', fontSize: '12px', color: '#6c757d' }}>
+                    {(file.size / 1024).toFixed(1)} KB
+                  </span>
+                )}
+              </FileItem>
+            ))}
+          </FileList>
+        </ContentContainer>
         
         <BrowserFooter>
           <SelectedFile>

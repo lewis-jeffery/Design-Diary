@@ -104,14 +104,21 @@ export class JupyterConversionService {
     };
 
     // Convert Jupyter cells back to Design Diary cells using layout info
+    // Track execution order for code cells to maintain logical sequence
+    let codeExecutionOrder = 1;
+    
     for (const jupyterCell of notebook.cells) {
       const cellId = jupyterCell.metadata.design_diary?.cell_id || jupyterCell.id || this.generateId();
       const cellLayout = layout.cells[cellId];
       
       if (cellLayout) {
-        const designDiaryCell = this.convertJupyterToCell(jupyterCell, cellLayout);
+        const designDiaryCell = this.convertJupyterToCell(jupyterCell, cellLayout, codeExecutionOrder);
         if (designDiaryCell) {
           document.cells.push(designDiaryCell);
+          // Increment execution order only for code cells
+          if (designDiaryCell.type === 'code') {
+            codeExecutionOrder++;
+          }
         }
       }
     }
@@ -211,10 +218,29 @@ export class JupyterConversionService {
   /**
    * Convert Jupyter cell back to Design Diary cell using layout information
    */
-  private static convertJupyterToCell(jupyterCell: JupyterCell, layout: any): Cell | null {
+  private static convertJupyterToCell(jupyterCell: JupyterCell, layout: any, codeExecutionOrder?: number): Cell | null {
     const cellId = jupyterCell.metadata.design_diary?.cell_id || jupyterCell.id || this.generateId();
-    const originalType = jupyterCell.metadata.design_diary?.original_type;
-    const executionOrder = jupyterCell.metadata.design_diary?.execution_order || 1;
+    
+    // Assign execution order based on design concept: code cells get logical sequence numbers
+    let executionOrder: number | null = null;
+    if (jupyterCell.cell_type === 'code') {
+      // For code cells, use the provided execution order (design sequence)
+      // This represents the intended logical flow, not execution history
+      if (codeExecutionOrder !== undefined) {
+        executionOrder = codeExecutionOrder;
+      } else {
+        // Fallback to existing metadata if available
+        const jupyterExecutionCount = jupyterCell.execution_count;
+        const designDiaryExecutionOrder = jupyterCell.metadata.design_diary?.execution_order;
+        
+        if (designDiaryExecutionOrder !== null && designDiaryExecutionOrder !== undefined) {
+          executionOrder = designDiaryExecutionOrder;
+        } else if (jupyterExecutionCount !== null && jupyterExecutionCount !== undefined) {
+          executionOrder = jupyterExecutionCount;
+        }
+      }
+    }
+    // For markdown/raw cells, executionOrder stays null (they don't participate in execution flow)
 
     const baseCell = {
       id: cellId,

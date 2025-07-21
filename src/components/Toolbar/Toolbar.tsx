@@ -122,6 +122,7 @@ const QuitButton = styled(ToolbarButton)`
 const Toolbar: React.FC = () => {
   const [showDirectoryBrowser, setShowDirectoryBrowser] = useState(false);
   const [showSaveAsDialog, setShowSaveAsDialog] = useState(false);
+  const [currentWorkingDirectory, setCurrentWorkingDirectory] = useState('/Users/lewis/opt/design-diary');
   
   const {
     document: designDocument,
@@ -134,11 +135,13 @@ const Toolbar: React.FC = () => {
     exportToJupyter,
     importFromJupyter,
     registerWorkingDirectory,
+    getCurrentWorkingDirectory,
     toggleSnapToGrid,
     updateCanvasZoom,
     updatePageSize,
     updatePageOrientation,
     setSavedFileInfo,
+    addRecentFile,
   } = useStore();
 
   const handleAddCell = useCallback((type: 'code' | 'markdown' | 'raw', renderingHint?: string) => {
@@ -235,7 +238,7 @@ const Toolbar: React.FC = () => {
       const result = await response.json();
       console.log('Server import result:', result);
       
-      const { notebook, layout, documentId, hasLayout } = result;
+      const { notebook, layout, documentId, hasLayout, notebookDirectory } = result;
       
       // Validate notebook structure
       if (!notebook.cells || !Array.isArray(notebook.cells)) {
@@ -314,13 +317,27 @@ const Toolbar: React.FC = () => {
         importFromJupyter(notebook, defaultLayout);
       }
       
+      // Register the working directory with the actual document ID after import
+      // The document ID might have changed during import, so we need to use the current document ID
+      if (notebookDirectory) {
+        // Wait a bit for the import to complete, then register with the current document ID
+        setTimeout(async () => {
+          const currentDocument = useStore.getState().document;
+          await registerWorkingDirectory(currentDocument.id, notebookDirectory);
+          console.log(`Registered working directory for imported document: ${currentDocument.id} -> ${notebookDirectory}`);
+        }, 100);
+      }
+      
+      // Add to recent files on successful import
+      await addRecentFile(notebookPath);
+      
       console.log('Import completed successfully');
       
     } catch (error) {
       console.error('Error during import:', error);
       alert(`Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }, [importFromJupyter]);
+  }, [importFromJupyter, addRecentFile, registerWorkingDirectory]);
 
   // Helper function to get directory path from directory handle
   const getDirectoryPath = async (directoryHandle: any): Promise<string | null> => {
@@ -361,10 +378,21 @@ const Toolbar: React.FC = () => {
     createNewDocument();
   }, [designDocument.cells.length, createNewDocument]);
 
-  const handleSaveAs = useCallback(() => {
+  const handleSaveAs = useCallback(async () => {
     console.log('Save As button clicked - opening save dialog');
+    
+    // Load the current working directory before opening the dialog
+    try {
+      const workingDir = await getCurrentWorkingDirectory();
+      setCurrentWorkingDirectory(workingDir);
+      console.log('Using working directory for save dialog:', workingDir);
+    } catch (error) {
+      console.warn('Failed to get current working directory, using default:', error);
+      setCurrentWorkingDirectory('/Users/lewis/opt/design-diary');
+    }
+    
     setShowSaveAsDialog(true);
-  }, []);
+  }, [getCurrentWorkingDirectory]);
 
   const handleSaveAsSelected = useCallback(async (filePath: string) => {
     console.log('File path selected for save:', filePath);
@@ -597,7 +625,7 @@ const Toolbar: React.FC = () => {
         onClose={() => setShowSaveAsDialog(false)}
         onSave={handleSaveAsSelected}
         defaultFilename={savedFileInfo.baseFileName ? `${savedFileInfo.baseFileName}.ipynb` : 'notebook.ipynb'}
-        defaultDirectory="/Users/lewis/opt/design-diary"
+        defaultDirectory={currentWorkingDirectory}
         title="Save Notebook As..."
       />
     </>

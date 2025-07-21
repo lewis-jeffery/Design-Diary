@@ -20,19 +20,19 @@ const CellContainer = styled.div<{
   top: ${props => props.$position.y}px;
   width: ${props => props.$size.width}px;
   height: ${props => props.$size.height}px;
-  border: 2px solid ${props => props.$selected ? '#007bff' : '#e0e0e0'};
+  border: 2px solid ${props => props.$selected ? '#007bff' : '#e1e5e9'};
   border-radius: 8px;
   background: white;
-  box-shadow: ${props => props.$selected ? '0 2px 8px rgba(0, 0, 0, 0.1)' : '0 1px 3px rgba(0, 0, 0, 0.1)'};
+  box-shadow: ${props => props.$selected ? '0 2px 8px rgba(0, 123, 255, 0.25)' : '0 1px 3px rgba(0, 0, 0, 0.1)'};
   z-index: ${props => props.$zIndex};
   cursor: move;
   overflow: hidden;
   transition: border-color 0.2s, box-shadow 0.2s;
   
-  /* Only show hover effects when selected */
+  /* Show hover effects for all cells */
   &:hover {
-    border-color: ${props => props.$selected ? '#007bff' : 'transparent'};
-    box-shadow: ${props => props.$selected ? '0 4px 12px rgba(0, 0, 0, 0.15)' : 'none'};
+    border-color: ${props => props.$selected ? '#007bff' : '#007bff'};
+    box-shadow: ${props => props.$selected ? '0 4px 12px rgba(0, 0, 0, 0.15)' : '0 2px 6px rgba(0, 0, 0, 0.1)'};
   }
 
   ${props => props.$collapsed && `
@@ -44,17 +44,16 @@ const CellContainer = styled.div<{
 const CellContent = styled.div<{ $collapsed: boolean; $isOutputCell: boolean }>`
   width: 100%;
   height: ${props => props.$collapsed ? 'auto' : 'calc(100% - 40px)'}; /* Account for toolbar */
-  padding: ${props => props.$isOutputCell ? '0' : '2px'};
+  padding: 8px;
   overflow: ${props => 
     props.$collapsed ? 'hidden' : 
     props.$isOutputCell ? 'visible' : 'auto'
   };
   
-  /* For output cells, ensure full height usage */
+  /* For output cells, adjust dimensions to account for consistent padding */
   ${props => props.$isOutputCell && `
-    margin: 2px;
-    width: calc(100% - 4px);
-    height: calc(100% - 44px); /* Account for toolbar + margins */
+    width: calc(100% - 16px); /* Account for 8px padding on each side */
+    height: calc(100% - 56px); /* Account for toolbar + 8px padding top/bottom */
   `}
 `;
 
@@ -121,6 +120,7 @@ interface CellComponentProps {
 }
 
 const CellComponent: React.FC<CellComponentProps> = ({ cell }) => {
+  
   const cellRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
   const isResizingRef = useRef(false);

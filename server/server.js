@@ -965,6 +965,156 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000); // Clean up every 10 minutes
 
+// Recent files management endpoints
+const RECENT_FILES_DIR = path.join(os.homedir(), '.jupyter', 'lab', 'user-settings', '@design-diary');
+const RECENT_FILES_PATH = path.join(RECENT_FILES_DIR, 'recent-files.json');
+
+// Ensure recent files directory exists
+function ensureRecentFilesDir() {
+  if (!fs.existsSync(RECENT_FILES_DIR)) {
+    fs.mkdirSync(RECENT_FILES_DIR, { recursive: true });
+    console.log(`Created recent files directory: ${RECENT_FILES_DIR}`);
+  }
+}
+
+// Load recent files from disk
+function loadRecentFiles() {
+  try {
+    ensureRecentFilesDir();
+    if (fs.existsSync(RECENT_FILES_PATH)) {
+      const content = fs.readFileSync(RECENT_FILES_PATH, 'utf8');
+      const data = JSON.parse(content);
+      
+      // Validate structure
+      if (Array.isArray(data)) {
+        return data.filter(file => 
+          file && 
+          typeof file.path === 'string' && 
+          typeof file.name === 'string' && 
+          typeof file.lastOpened === 'string'
+        );
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to load recent files:', error.message);
+  }
+  return [];
+}
+
+// Save recent files to disk
+function saveRecentFiles(recentFiles) {
+  try {
+    ensureRecentFilesDir();
+    const content = JSON.stringify(recentFiles, null, 2);
+    fs.writeFileSync(RECENT_FILES_PATH, content, 'utf8');
+    console.log(`Saved ${recentFiles.length} recent files to ${RECENT_FILES_PATH}`);
+    return true;
+  } catch (error) {
+    console.error('Failed to save recent files:', error.message);
+    return false;
+  }
+}
+
+// Get recent files endpoint
+app.get('/api/recent-files', (req, res) => {
+  try {
+    const recentFiles = loadRecentFiles();
+    res.json({ recentFiles });
+  } catch (error) {
+    res.status(500).json({ error: `Failed to load recent files: ${error.message}` });
+  }
+});
+
+// Add recent file endpoint
+app.post('/api/recent-files', (req, res) => {
+  const { filePath } = req.body;
+  
+  if (!filePath) {
+    return res.status(400).json({ error: 'Missing filePath' });
+  }
+  
+  try {
+    const recentFiles = loadRecentFiles();
+    const fileName = path.basename(filePath);
+    
+    // Remove existing entry if it exists
+    const filteredFiles = recentFiles.filter(file => file.path !== filePath);
+    
+    // Add new entry at the beginning
+    const newRecentFile = {
+      path: filePath,
+      name: fileName,
+      lastOpened: new Date().toISOString(),
+    };
+    
+    // Keep only the last 10 recent files
+    const updatedRecentFiles = [newRecentFile, ...filteredFiles].slice(0, 10);
+    
+    // Save to disk
+    const success = saveRecentFiles(updatedRecentFiles);
+    
+    if (success) {
+      res.json({ 
+        success: true, 
+        recentFiles: updatedRecentFiles,
+        message: `Added ${fileName} to recent files`
+      });
+    } else {
+      res.status(500).json({ error: 'Failed to save recent files' });
+    }
+    
+  } catch (error) {
+    res.status(500).json({ error: `Failed to add recent file: ${error.message}` });
+  }
+});
+
+// Clear recent files endpoint
+app.delete('/api/recent-files', (req, res) => {
+  try {
+    const success = saveRecentFiles([]);
+    
+    if (success) {
+      res.json({ 
+        success: true, 
+        message: 'Recent files cleared'
+      });
+    } else {
+      res.status(500).json({ error: 'Failed to clear recent files' });
+    }
+    
+  } catch (error) {
+    res.status(500).json({ error: `Failed to clear recent files: ${error.message}` });
+  }
+});
+
+// Remove specific recent file endpoint
+app.delete('/api/recent-files/:encodedPath', (req, res) => {
+  const { encodedPath } = req.params;
+  
+  try {
+    const filePath = decodeURIComponent(encodedPath);
+    const recentFiles = loadRecentFiles();
+    
+    // Remove the specified file
+    const filteredFiles = recentFiles.filter(file => file.path !== filePath);
+    
+    const success = saveRecentFiles(filteredFiles);
+    
+    if (success) {
+      res.json({ 
+        success: true, 
+        recentFiles: filteredFiles,
+        message: `Removed ${path.basename(filePath)} from recent files`
+      });
+    } else {
+      res.status(500).json({ error: 'Failed to save recent files' });
+    }
+    
+  } catch (error) {
+    res.status(500).json({ error: `Failed to remove recent file: ${error.message}` });
+  }
+});
+
 // Graceful shutdown endpoint
 app.post('/api/shutdown', (req, res) => {
   console.log('🔄 Shutdown request received');

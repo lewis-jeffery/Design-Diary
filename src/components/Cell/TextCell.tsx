@@ -183,16 +183,10 @@ interface TextCellProps {
 const TextCell: React.FC<TextCellProps> = ({ cell }) => {
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const renderedContentRef = useRef<HTMLDivElement>(null);
-  const { updateCell, clearSelection, document } = useStore();
+  const { updateCell, document } = useStore();
   const [isEditMode, setIsEditMode] = useState(true);
 
-  // Clear selection when text cell mounts to prevent auto-selection
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      clearSelection();
-    }, 50);
-    return () => clearTimeout(timer);
-  }, [clearSelection]);
+  // Removed clearSelection call that was interfering with newly created cells
 
   // Handle image loading with directory handles
   useEffect(() => {

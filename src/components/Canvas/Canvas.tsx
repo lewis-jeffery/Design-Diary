@@ -289,7 +289,15 @@ const Canvas: React.FC = () => {
 
   // Handle canvas click (clear selection if clicking on empty space)
   const handleCanvasClick = useCallback((e: React.MouseEvent) => {
+    console.log('🔧 DEBUG: Canvas click detected', {
+      target: e.target,
+      currentTarget: e.currentTarget,
+      targetEquals: e.target === e.currentTarget,
+      willClearSelection: e.target === e.currentTarget
+    });
+    
     if (e.target === e.currentTarget) {
+      console.log('🔧 DEBUG: Clearing selection due to canvas click');
       clearSelection();
     }
   }, [clearSelection]);

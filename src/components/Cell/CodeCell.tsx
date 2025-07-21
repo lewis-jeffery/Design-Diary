@@ -61,7 +61,7 @@ interface CodeCellProps {
 }
 
 const CodeCell: React.FC<CodeCellProps> = ({ cell }) => {
-  const { updateCell, clearSelection } = useStore();
+  const { updateCell } = useStore();
 
   const handleCodeChange = useCallback((value: string | undefined) => {
     if (value !== undefined) {
@@ -139,10 +139,8 @@ const CodeCell: React.FC<CodeCellProps> = ({ cell }) => {
             }
             onMount={(editor, monaco) => {
               console.log('✅ Monaco Editor mounted successfully');
-              // Prevent any automatic selection when Monaco mounts
+              // Just blur the editor to prevent focus-based issues, but don't clear selection
               setTimeout(() => {
-                clearSelection();
-                // Also blur the editor to prevent focus-based selection
                 editor.getContainerDomNode().blur();
               }, 50);
             }}

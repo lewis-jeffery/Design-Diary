@@ -155,8 +155,15 @@ export interface SelectionState {
 }
 
 export interface SavedFileInfo {
-  baseFileName: string | null; // e.g., "my_notebook" (without extension)
-  lastSavedPath: string | null; // Full path where files were last saved
+  baseFileName: string | null;
+  lastSavedPath: string | null;
+}
+
+export interface RecentFile {
+  path: string;
+  name: string;
+  lastOpened: string;
+  size?: number;
 }
 
 export interface AppState {
@@ -167,4 +174,5 @@ export interface AppState {
   executionQueue: string[];
   globalExecutionCount: number;
   savedFileInfo: SavedFileInfo;
+  recentFiles: RecentFile[];
 }

@@ -268,10 +268,13 @@ const SaveAsDialog: React.FC<SaveAsDialogProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      loadDirectory(currentPath);
+      // Update current path if defaultDirectory has changed
+      const targetDirectory = defaultDirectory || '/Users/lewis/opt/design-diary';
+      setCurrentPath(targetDirectory);
+      loadDirectory(targetDirectory);
       setFilename(defaultFilename);
     }
-  }, [isOpen, defaultFilename]);
+  }, [isOpen, defaultFilename, defaultDirectory]);
 
   const handleFileClick = (file: FileInfo) => {
     if (file.isDirectory) {

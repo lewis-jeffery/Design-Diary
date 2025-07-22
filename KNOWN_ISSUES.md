@@ -14,6 +14,26 @@ This document tracks known issues, their status, and verification results to mai
 
 ## 🔥 Critical Issues (Blocking Core Functionality)
 
+### 2. Output Cell Position Preservation
+- **Status**: 🔄 **PARTIALLY FIXED**: Works for code cell 1, broken for cells 2+
+- **Description**: Output cells change positions when code cells are re-executed, but fix only works for first code cell
+- **Current Behavior**:
+  - ✅ **Code Cell 1**: Output cell position preservation works correctly, outputs overwrite in place
+  - ❌ **Code Cells 2+**: Position preservation fails completely
+  - ❌ **Missing Execution Order**: Code cells 2+ have no blue execution order dot on their output cells after import
+  - ❌ **New Cell Generation**: Instead of reusing existing output cells, new output cells are generated on each execution
+- **Impact**: 
+  - Layout becomes unpredictable for multi-cell notebooks
+  - Output cells multiply and jump around for cells 2 and above
+  - Execution order tracking is broken for imported notebooks with multiple cells
+- **Root Cause**: Array indexing logic in position reuse only works correctly for the first cell (index 0)
+- **Last Attempted Fix**: 2025-07-22 - Simplified position reuse logic using array indexing (incomplete fix)
+- **Verification Results**: 2025-07-22 - User confirmed works for cell 1, fails for cells 2+
+- **Next Steps**: 
+  - Debug why array indexing fails for cells beyond index 0
+  - Fix execution order assignment for imported output cells
+  - Ensure output cell reuse works for all code cells, not just the first
+- **Priority**: 🔥 **CRITICAL** - Basic functionality must work before adding features like PDF export
 
 ---
 
@@ -57,7 +77,64 @@ This document tracks known issues, their status, and verification results to mai
 
 ## 📋 Medium Priority Issues
 
+### 7. Add Page Functionality
+- **Status**: 🆕 **NEW**: Feature request - not yet implemented
+- **Description**: Need ability to insert a new blank page into the document at a specific location
+- **Requested Behavior**: 
+  - "Add Page" button/function should insert a new blank page immediately below the currently selected cell
+  - This refers to on-screen page layout, not printing pages
+  - Should maintain proper page boundaries and layout structure
+- **Current Limitation**: 
+  - No way to insert additional pages into existing documents
+  - Users cannot organize content across multiple pages
+  - All content must fit on single page or overflow unpredictably
+- **Impact**: 
+  - Limits document organization capabilities
+  - Prevents logical separation of content sections
+  - Reduces usability for larger documents
+- **Implementation Considerations**:
+  - Need to determine page insertion logic relative to selected cell
+  - Should integrate with existing page layout system
+  - Must maintain proper cell positioning across page boundaries
+  - Consider how this affects save/load functionality
+- **Priority**: MEDIUM - Enhancement that would improve document organization
+- **Next Steps**: 
+  - Design page insertion UI/UX
+  - Implement page creation logic
+  - Test with existing cell positioning system
+  - Ensure compatibility with import/export functionality
 
+### 8. WYSIWYG Print Layout (PDF Layout Matching)
+- **Status**: 🆕 **NEW**: Feature request - should be incorporated into PDF rebuild
+- **Description**: PDF/print output should exactly replicate the on-screen view without adding margins or changing layout
+- **Current Problem**: 
+  - PDF generation adds margins that reduce useful area
+  - Print layout differs from on-screen layout
+  - User's carefully designed on-screen layout is not preserved in output
+- **Requested Behavior**: 
+  - On-screen layout should be exactly what appears in PDF/print
+  - No additional margins should be added during PDF generation
+  - User controls layout on-screen, PDF follows this exactly
+  - "What You See Is What You Get" principle
+- **Impact**: 
+  - Users cannot predict how their document will look when printed/exported
+  - Reduces effective page area in PDF output
+  - Breaks design intent and layout precision
+  - Makes it difficult to create professional-looking documents
+- **Implementation Requirements**:
+  - PDF generation must capture exact on-screen dimensions and positioning
+  - Remove any automatic margin addition in PDF export
+  - Ensure 1:1 correspondence between screen pixels and PDF layout
+  - Consider page size settings and scaling factors
+- **Integration with PDF Rebuild**: 
+  - This requirement should be built into the new PDF generation system
+  - When PDF generation is rebuilt, prioritize exact layout matching
+  - Test with various page sizes and orientations
+- **Priority**: MEDIUM - Should be incorporated into PDF system rebuild
+- **Next Steps**: 
+  - Include this requirement in PDF generation system redesign
+  - Research PDF libraries that support exact layout matching
+  - Test layout preservation across different screen sizes and zoom levels
 
 ---
 

@@ -128,17 +128,17 @@ export class JupyterConversionService {
             });
             
             if (!hasDesignDiaryMetadata && !hasOutputCellsInLayout) {
-              // This is a fresh Jupyter notebook with no existing output cells - create output cells from outputs array
-              console.log('🔧 DEBUG: Fresh Jupyter import - converting outputs to Design Diary cells for cell:', designDiaryCell.id);
-              const outputCells = this.convertJupyterOutputsToDesignDiaryCells(
-                jupyterCell.outputs, 
-                designDiaryCell.id, 
-                designDiaryCell.position, 
-                designDiaryCell.size,
-                designDiaryCell.executionOrder
-              );
-              console.log('🔧 DEBUG: Created', outputCells.length, 'output cells for', designDiaryCell.id);
-              document.cells.push(...outputCells);
+        // This is a fresh Jupyter notebook with no existing output cells - create output cells from outputs array
+        console.log('🔧 DEBUG: Fresh Jupyter import - converting outputs to Design Diary cells for cell:', designDiaryCell.id);
+        const outputCells = this.convertJupyterOutputsToDesignDiaryCells(
+          jupyterCell.outputs, 
+          designDiaryCell.id, 
+          designDiaryCell.position, 
+          designDiaryCell.size,
+          designDiaryCell.executionOrder // Pass execution order to output cells
+        );
+        console.log('🔧 DEBUG: Created', outputCells.length, 'output cells for', designDiaryCell.id, 'with execution order', designDiaryCell.executionOrder);
+        document.cells.push(...outputCells);
             } else {
               // This is a re-import of a Design Diary exported notebook - outputs are already separate cells in layout
               console.log('🔧 DEBUG: Re-importing Design Diary notebook with existing output cells - skipping output conversion for cell:', designDiaryCell.id);

@@ -53,7 +53,7 @@ interface StoreActions {
   getCurrentWorkingDirectory: () => Promise<string>;
   
   // Cell actions
-  addCell: (type: Cell['type'], position: Position, renderingHint?: string) => void;
+  addCell: (type: Cell['type'], position: Position, renderingHint?: string, insertAfterCellId?: string) => void;
   updateCell: (cellId: string, updates: Partial<Cell>) => void;
   deleteCell: (cellId: string) => void;
   duplicateCell: (cellId: string) => void;
@@ -431,17 +431,75 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
   },
 
   // Cell actions
-  addCell: (type: Cell['type'], position: Position, renderingHint?: string) => {
-    const { document } = get();
+  addCell: (type: Cell['type'], position: Position, renderingHint?: string, insertAfterCellId?: string) => {
+    const { document, selectionState } = get();
     
     // Clear any existing selection first
     get().clearSelection();
     
-    // For code cells, assign the next sequential execution order
+    // Determine insertion logic for code cells
     let executionOrder: number | null = null;
     if (type === 'code') {
-      const existingCodeCells = document.cells.filter(cell => cell.type === 'code');
-      executionOrder = existingCodeCells.length + 1; // Next sequential number
+      // Get all existing code cells sorted by execution order
+      const existingCodeCells = document.cells
+        .filter(cell => cell.type === 'code')
+        .sort((a, b) => {
+          if (a.executionOrder === null && b.executionOrder === null) return 0;
+          if (a.executionOrder === null) return 1;
+          if (b.executionOrder === null) return -1;
+          return a.executionOrder - b.executionOrder;
+        });
+
+      // Determine where to insert based on selection or insertAfterCellId
+      let insertAfterOrder: number | null = null;
+      
+      if (insertAfterCellId) {
+        // Find the specified cell to insert after
+        const insertAfterCell = document.cells.find(c => c.id === insertAfterCellId);
+        if (insertAfterCell && insertAfterCell.type === 'code') {
+          insertAfterOrder = insertAfterCell.executionOrder;
+        }
+      } else if (selectionState.selectedCellIds.length > 0) {
+        // Use the last selected code cell
+        const selectedCodeCells = document.cells
+          .filter(c => c.type === 'code' && selectionState.selectedCellIds.includes(c.id))
+          .sort((a, b) => {
+            if (a.executionOrder === null && b.executionOrder === null) return 0;
+            if (a.executionOrder === null) return 1;
+            if (b.executionOrder === null) return -1;
+            return a.executionOrder - b.executionOrder;
+          });
+        
+        if (selectedCodeCells.length > 0) {
+          const lastSelected = selectedCodeCells[selectedCodeCells.length - 1];
+          insertAfterOrder = lastSelected.executionOrder;
+        }
+      }
+
+      // Determine the new execution order
+      if (insertAfterOrder !== null) {
+        // Insert after the specified cell - need to renumber subsequent cells
+        executionOrder = insertAfterOrder + 1;
+        
+        // Renumber all code cells that come after the insertion point
+        const cellsToRenumber = existingCodeCells.filter(c => 
+          c.executionOrder !== null && c.executionOrder >= executionOrder!
+        );
+        
+        console.log('🔧 DEBUG: Inserting code cell at execution order', executionOrder);
+        console.log('🔧 DEBUG: Will renumber', cellsToRenumber.length, 'subsequent cells');
+        
+        // Update execution orders for subsequent cells
+        cellsToRenumber.forEach(cell => {
+          if (cell.executionOrder !== null) {
+            get().updateCell(cell.id, { executionOrder: cell.executionOrder + 1 });
+          }
+        });
+      } else {
+        // No insertion point specified - add at the end
+        executionOrder = existingCodeCells.length + 1;
+        console.log('🔧 DEBUG: Adding code cell at end with execution order', executionOrder);
+      }
     }
     
     const baseCell = {
@@ -550,24 +608,11 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
     console.log('🔧 DEBUG: Created new cell:');
     console.log('  ID:', newCell.id);
     console.log('  Type:', newCell.type);
+    console.log('  Execution Order:', newCell.executionOrder);
     console.log('  Position x:', newCell.position.x, 'y:', newCell.position.y);
     console.log('  Size width:', newCell.size.width, 'height:', newCell.size.height);
     console.log('  Selected:', newCell.selected);
     console.log('  zIndex:', newCell.zIndex);
-    
-    // Cell is already created as selected and selection state is already updated
-    // No need for additional selectCell call which might cause race conditions
-    
-    // Debug: Log selection state
-    setTimeout(() => {
-      const currentState = get();
-      const selectedCell = currentState.document.cells.find(c => c.id === newCell.id);
-      console.log('🔧 DEBUG: Final cell state:', {
-        id: selectedCell?.id,
-        selected: selectedCell?.selected,
-        selectedCellIds: currentState.selectionState.selectedCellIds
-      });
-    }, 100);
   },
 
   updateCell: (cellId: string, updates: Partial<Cell>) => {

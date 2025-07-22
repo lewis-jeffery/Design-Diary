@@ -140,7 +140,65 @@ This document tracks known issues, their status, and verification results to mai
 
 ## 🔧 Low Priority / Enhancement Issues
 
+### 9. Text Cell Edit/Render Button Redundancy
+- **Status**: 🆕 **NEW**: Enhancement request - improve text cell UX
+- **Description**: Text cells have redundant render button and could use JupyterLab-style double-click editing
+- **Current Behavior**: 
+  - Text cells have both "Edit" and "Render" buttons in addition to toolbar
+  - "Render" button duplicates functionality of "Execute" button in main toolbar
+  - Requires explicit button clicks to enter/exit edit mode
+- **Requested Improvements**: 
+  - Remove redundant "Render" button (use main toolbar "Execute" instead)
+  - Replace "Edit" button with double-click to enter edit mode (JupyterLab style)
+  - Single click or Escape to exit edit mode and render
+  - Maintain consistency with JupyterLab interaction patterns
+- **Benefits**: 
+  - Cleaner, less cluttered text cell interface
+  - More intuitive editing workflow matching JupyterLab
+  - Reduces button redundancy and UI complexity
+  - Faster editing workflow for power users
+- **Implementation Considerations**:
+  - Need to handle double-click detection vs single-click selection
+  - Ensure edit mode state is properly managed
+  - Consider keyboard shortcuts (Enter to edit, Escape to render)
+  - Test interaction with cell selection and dragging
+- **Priority**: LOW - UI/UX enhancement that improves workflow
+- **Next Steps**: 
+  - Remove render button from text cell component
+  - Implement double-click edit mode entry
+  - Add single-click or Escape to exit edit mode
+  - Test interaction patterns for usability
 
+### 10. Cell Toolbar Positioning and Obstruction
+- **Status**: 🆕 **NEW**: Enhancement request - improve cell toolbar UX
+- **Description**: Cell toolbar appears on focus but covers content in top-right corner, obstructing first few lines
+- **Current Behavior**: 
+  - Cell toolbar becomes visible when cell gains focus
+  - Toolbar positioned in top-right corner of cell
+  - Covers and obstructs the first few lines of cell content
+  - Fixed position that cannot be moved when it blocks important content
+- **Requested Improvements**: 
+  - Move toolbar to bottom of cell instead of top-right
+  - Make toolbar floating/draggable so it can be repositioned when necessary
+  - Ensure toolbar doesn't obstruct cell content by default
+  - Consider auto-positioning based on available space
+- **Benefits**: 
+  - Cell content remains fully visible when toolbar is active
+  - User can reposition toolbar when it conflicts with content
+  - More professional appearance without content obstruction
+  - Better usability for cells with important content at the top
+- **Implementation Considerations**:
+  - Need to implement draggable toolbar functionality
+  - Consider toolbar positioning relative to cell boundaries
+  - Ensure toolbar remains accessible and doesn't go off-screen
+  - Test with different cell sizes and content types
+  - Consider saving toolbar position preferences per cell or globally
+- **Priority**: LOW - UI/UX enhancement that improves content visibility
+- **Next Steps**: 
+  - Move default toolbar position to bottom of cell
+  - Implement floating/draggable toolbar functionality
+  - Add position persistence if needed
+  - Test with various cell sizes and content layouts
 
 ---
 

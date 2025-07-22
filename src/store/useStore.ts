@@ -869,12 +869,17 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
       return rawCell.sourceCodeCellId === cellId;
     });
     
-    // Store positions of existing output cells for reuse (simplified)
-    const savedPositions = existingOutputCells.map((cell, index) => ({
-      position: cell.position,
-      size: cell.size,
-      index: index
-    }));
+    // Store positions of existing output cells for reuse - sort by position for consistent ordering
+    const savedPositions = existingOutputCells
+      .sort((a, b) => a.position.y - b.position.y) // Sort by Y position (top to bottom)
+      .map((cell) => ({
+        position: cell.position,
+        size: cell.size,
+        outputType: (cell as any).outputType || 'text'
+      }));
+    
+    console.log('🔧 DEBUG: Found', existingOutputCells.length, 'existing output cells for code cell', cellId);
+    console.log('🔧 DEBUG: Saved positions:', savedPositions);
     
     // Remove existing output cells
     if (existingOutputCells.length > 0) {
@@ -905,31 +910,63 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
       const hasRichOutputs = result.outputs && Array.isArray(result.outputs) && result.outputs.length > 0;
 
 
-      // Create output cells - simplified position reuse
+      // Create output cells with improved position reuse logic
       const currentState = get();
       let newCells = [...currentState.document.cells];
       let outputIndex = 0; // Track which saved position to use
+      
+      // Helper function to get next available position
+      const getOutputPosition = (outputType: string) => {
+        // Try to find a saved position that matches the output type
+        let savedPos = null;
+        for (let i = outputIndex; i < savedPositions.length; i++) {
+          if (savedPositions[i].outputType === outputType) {
+            savedPos = savedPositions[i];
+            outputIndex = i + 1; // Move to next position for subsequent outputs
+            break;
+          }
+        }
+        
+        // If no matching type found, use the next available position
+        if (!savedPos && outputIndex < savedPositions.length) {
+          savedPos = savedPositions[outputIndex];
+          outputIndex++;
+        }
+        
+        // Return saved position or calculate default
+        if (savedPos) {
+          console.log('🔧 DEBUG: Reusing saved position for', outputType, 'at', savedPos.position);
+          return { position: savedPos.position, size: savedPos.size };
+        } else {
+          const defaultPos = {
+            x: cell.position.x + cell.size.width + 20,
+            y: cell.position.y + (outputIndex * 220),
+          };
+          console.log('🔧 DEBUG: Using default position for', outputType, 'at', defaultPos);
+          return { 
+            position: defaultPos, 
+            size: outputType === 'image' ? { width: 400, height: 300 } : { width: 400, height: 100 }
+          };
+        }
+      };
 
       // Add text output if present
       if (hasTextOutput || hasErrorOutput) {
         const textOutputContent = hasErrorOutput ? result.stderr : result.stdout;
+        const outputType = hasErrorOutput ? 'error' : 'text';
+        const { position, size } = getOutputPosition(outputType);
         
-        // Use saved position if available, otherwise default position
-        const savedPos = savedPositions[outputIndex];
-        const position = savedPos ? savedPos.position : {
-          x: cell.position.x + cell.size.width + 20,
-          y: cell.position.y + (outputIndex * 220),
-        };
-        const size = savedPos ? savedPos.size : { 
-          width: 400, 
-          height: Math.max(100, Math.min(300, textOutputContent.split('\n').length * 20 + 40)) 
+        // Adjust size based on content
+        const adjustedSize = {
+          width: size.width,
+          height: Math.max(100, Math.min(300, textOutputContent.split('\n').length * 20 + 40))
         };
         
         const textOutputCell: Cell = {
           id: uuidv4(),
           type: 'raw',
           position,
-          size,
+          size: adjustedSize,
           executionOrder: cell.executionOrder, // Match the source code cell's sequence number
           collapsed: false,
           collapsedSize: { width: 400, height: 50 },
@@ -941,10 +978,10 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
         
         // Mark this as an output cell for this code cell
         (textOutputCell as any).sourceCodeCellId = cellId;
+        (textOutputCell as any).outputType = outputType;
         (textOutputCell as any).success = !hasErrorOutput;
         
         newCells.push(textOutputCell);
-        outputIndex++;
       }
 
       // Add rich outputs (images, plots, etc.)
@@ -952,23 +989,19 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
         for (const output of result.outputs) {
           if (output.type === 'image') {
             const imageUrl = `http://localhost:3001/api/outputs/${output.data}`;
+            const { position, size } = getOutputPosition('image');
             
-            // Use saved position if available, otherwise default position
-            const savedPos = savedPositions[outputIndex];
-            const position = savedPos ? savedPos.position : {
-              x: cell.position.x + cell.size.width + 20,
-              y: cell.position.y + (outputIndex * 220),
-            };
-            const size = savedPos ? savedPos.size : { 
-              width: Math.min(500, output.metadata?.width || 400), 
-              height: Math.min(400, output.metadata?.height || 300) 
+            // Adjust size based on image metadata
+            const adjustedSize = {
+              width: Math.min(500, output.metadata?.width || size.width),
+              height: Math.min(400, output.metadata?.height || size.height)
             };
             
             const imageOutputCell: Cell = {
               id: uuidv4(),
               type: 'raw',
               position,
-              size,
+              size: adjustedSize,
               executionOrder: cell.executionOrder, // Match the source code cell's sequence number
               collapsed: false,
               collapsedSize: { width: 400, height: 50 },
@@ -987,29 +1020,23 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
             
             // Mark this as an output cell for this code cell
             (imageOutputCell as any).sourceCodeCellId = cellId;
+            (imageOutputCell as any).outputType = 'image';
             (imageOutputCell as any).success = true;
             
             newCells.push(imageOutputCell);
-            outputIndex++;
           }
         }
       }
 
       // If no outputs at all, create a simple success message
       if (!hasTextOutput && !hasErrorOutput && !hasRichOutputs) {
-        // Use saved position if available, otherwise default position
-        const savedPos = savedPositions[outputIndex];
-        const position = savedPos ? savedPos.position : {
-          x: cell.position.x + cell.size.width + 20,
-          y: cell.position.y + (outputIndex * 220),
-        };
-        const size = savedPos ? savedPos.size : { width: 300, height: 60 };
+        const { position, size } = getOutputPosition('success');
         
         const successOutputCell: Cell = {
           id: uuidv4(),
           type: 'raw',
           position,
-          size,
+          size: { width: Math.max(300, size.width), height: Math.max(60, size.height) },
           executionOrder: cell.executionOrder, // Match the source code cell's sequence number
           collapsed: false,
           collapsedSize: { width: 300, height: 50 },
@@ -1020,9 +1047,10 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
         } as any;
         
         (successOutputCell as any).sourceCodeCellId = cellId;
+        (successOutputCell as any).outputType = 'success';
+        (successOutputCell as any).success = true;
         
         newCells.push(successOutputCell);
-        outputIndex++;
       }
 
       // Update the document with new cells

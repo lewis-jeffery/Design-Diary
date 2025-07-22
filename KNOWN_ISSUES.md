@@ -20,50 +20,6 @@ This document tracks known issues, their status, and verification results to mai
 
 ## ⚠️ High Priority Issues
 
-### 3. Code Cell Insertion Execution Order
-- **Status**: 🆕 **NEW**: Execution order not properly managed on cell insertion
-- **Description**: When a new code cell is inserted between existing cells, execution order numbering is incorrect
-- **Current Behavior**: 
-  - New cell inserted before cell 4 gets execution order at end of document (e.g., becomes cell 6)
-  - Existing cells after insertion point keep their original execution order
-  - No renumbering of subsequent cells occurs
-- **Expected Behavior**: 
-  - New cell inserted before cell 4 should become new cell 4
-  - All cells after insertion point should increment their execution order by 1
-  - Maintains logical sequence: 1, 2, 3, [new 4], [old 4→5], [old 5→6], etc.
-- **Impact**: 
-  - Execution order doesn't reflect logical document flow
-  - Confusing for users trying to understand cell sequence
-  - Breaks expected notebook behavior from JupyterLab
-- **Root Cause**: Cell insertion logic assigns next available number instead of inserting at logical position
-- **Priority**: HIGH - Important for logical document organization
-- **Next Steps**: 
-  - Modify addCell logic to determine insertion position based on selected cell
-  - Implement renumbering of subsequent cells when inserting between existing cells
-  - Ensure execution order reflects visual/logical document flow
-
-### 4. Output Cell Execution Order Display on Import
-- **Status**: 🆕 **NEW**: Output cells don't show execution order numbers until after execution
-- **Description**: On import, code cells display execution order correctly, but output cells don't show matching numbers
-- **Current Behavior**: 
-  - Code cells show execution order numbers immediately on import (1, 2, 3, etc.)
-  - Output cells only show execution order numbers after code cell is re-executed
-  - Creates disconnect between code cells and their associated outputs
-- **Expected Behavior**: 
-  - Output cells should display matching execution order numbers on import
-  - Should help users understand document design and cell relationships
-  - Visual consistency between code cells and their outputs
-- **Impact**: 
-  - Users can't easily identify which outputs belong to which code cells
-  - Reduces document readability and understanding
-  - Inconsistent with JupyterLab behavior where outputs are clearly linked
-- **Root Cause**: Output cells don't inherit execution order display from import process
-- **Priority**: HIGH - Important for document comprehension and usability
-- **Next Steps**: 
-  - Ensure output cells display execution order numbers on import
-  - Verify execution order is properly preserved in import/export cycle
-  - Test with various notebook formats and output types
-
 ### 6. PDF Generation System Failure
 - **Status**: 🔥 **CRITICAL**: Blocking core functionality
 - **Description**: PDF export functionality completely fails with multiple severe issues:
@@ -268,7 +224,47 @@ This document tracks known issues, their status, and verification results to mai
 - **Verification Needed**: Create new code cells, verify they have no execution number until executed
 - **Priority**: LOW
 
-### 3. PDF Generation Multi-Page Support
+### 3. Code Cell Insertion Execution Order
+- **Status**: ✅ **FIXED**: Implemented smart insertion logic with renumbering
+- **Description**: When a new code cell is inserted between existing cells, execution order numbering was incorrect
+- **Original Problem**: 
+  - New cell inserted before cell 4 got execution order at end of document (e.g., became cell 6)
+  - Existing cells after insertion point kept their original execution order
+  - No renumbering of subsequent cells occurred
+- **Solution Implemented**: 2025-07-23 - Enhanced addCell() function with smart insertion logic
+  - Modified addCell() to support insertAfterCellId parameter for targeted insertion
+  - Implemented insertion position detection based on selected cells or explicit parameter
+  - Added automatic renumbering of subsequent cells when inserting between existing cells
+  - New cells inserted before cell 4 now become new cell 4, with cells 4+ incrementing
+  - Maintains logical sequence: 1, 2, 3, [new 4], [old 4→5], [old 5→6], etc.
+  - Enhanced debugging output for execution order assignment
+- **Technical Details**:
+  - Smart insertion logic determines position based on selected code cells or insertAfterCellId
+  - Automatic renumbering ensures execution order reflects logical document flow
+  - Falls back to end-of-document insertion when no insertion point specified
+  - Maintains backward compatibility with existing cell creation workflows
+- **Priority**: RESOLVED
+
+### 4. Output Cell Execution Order Display on Import
+- **Status**: ✅ **FIXED**: Output cells now display execution order numbers on import
+- **Description**: On import, code cells displayed execution order correctly, but output cells didn't show matching numbers
+- **Original Problem**: 
+  - Code cells showed execution order numbers immediately on import (1, 2, 3, etc.)
+  - Output cells only showed execution order numbers after code cell was re-executed
+  - Created disconnect between code cells and their associated outputs
+- **Solution Implemented**: 2025-07-23 - Fixed Jupyter conversion service to preserve execution order
+  - Enhanced convertJupyterOutputsToDesignDiaryCells() to properly pass executionOrder parameter
+  - Output cells now inherit and display execution order from their source code cells
+  - Ensures execution order numbers are visible immediately on import
+  - Maintains visual consistency between code cells and their outputs
+- **Technical Details**:
+  - Fixed parameter passing in jupyterConversionService.ts
+  - Output cells now properly inherit executionOrder from source code cells
+  - Enhanced debugging output for execution order assignment during import
+  - Improves document comprehension by clearly linking outputs to code cells
+- **Priority**: RESOLVED
+
+### 6. PDF Generation Multi-Page Support
 - **Status**: ✅ **FIXED**: Verified working by user
 - **Description**: PDF generation was single page only, additional pages not rendered
 - **Impact**: Generated PDFs had incorrect layout, content was cut off

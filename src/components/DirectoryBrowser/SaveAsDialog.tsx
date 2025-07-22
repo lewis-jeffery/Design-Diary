@@ -209,6 +209,7 @@ interface SaveAsDialogProps {
   defaultFilename?: string;
   title?: string;
   defaultDirectory?: string;
+  fileExtension?: string; // New prop to specify expected file extension
 }
 
 const SaveAsDialog: React.FC<SaveAsDialogProps> = ({
@@ -217,7 +218,8 @@ const SaveAsDialog: React.FC<SaveAsDialogProps> = ({
   onSave,
   defaultFilename = 'notebook.ipynb',
   title = 'Save Notebook As...',
-  defaultDirectory
+  defaultDirectory,
+  fileExtension
 }) => {
   // Use current working directory or fall back to default
   const initialDirectory = defaultDirectory || '/Users/lewis/opt/design-diary';
@@ -286,9 +288,14 @@ const SaveAsDialog: React.FC<SaveAsDialogProps> = ({
   const handleFileClick = (file: FileInfo) => {
     if (file.isDirectory) {
       loadDirectory(file.path);
-    } else if (file.name.endsWith('.ipynb')) {
-      // If clicking on an existing notebook, use its name as the filename
-      setFilename(file.name);
+    } else {
+      // Determine expected extension from fileExtension prop or defaultFilename
+      const expectedExt = fileExtension || (defaultFilename.includes('.') ? defaultFilename.split('.').pop() : 'ipynb');
+      
+      if (file.name.endsWith(`.${expectedExt}`)) {
+        // If clicking on a file with the expected extension, use its name as the filename
+        setFilename(file.name);
+      }
     }
   };
 
@@ -309,9 +316,12 @@ const SaveAsDialog: React.FC<SaveAsDialogProps> = ({
 
     let finalFilename = filename.trim();
     
-    // Ensure the filename ends with .ipynb
-    if (!finalFilename.endsWith('.ipynb')) {
-      finalFilename += '.ipynb';
+    // Determine expected extension from fileExtension prop or defaultFilename
+    const expectedExt = fileExtension || (defaultFilename.includes('.') ? defaultFilename.split('.').pop() : 'ipynb');
+    
+    // Ensure the filename ends with the correct extension
+    if (!finalFilename.endsWith(`.${expectedExt}`)) {
+      finalFilename += `.${expectedExt}`;
     }
 
     // Construct the full path
@@ -343,9 +353,10 @@ const SaveAsDialog: React.FC<SaveAsDialogProps> = ({
   const canGoUp = currentPath !== '/';
   const fullSavePath = `${currentPath}/${filename}`.replace(/\/+/g, '/');
 
-  // Filter to show directories and .ipynb files
+  // Filter to show directories and files with the expected extension
+  const expectedExt = fileExtension || (defaultFilename.includes('.') ? defaultFilename.split('.').pop() : 'ipynb');
   const filteredFiles = files.filter(file => 
-    file.isDirectory || file.name.endsWith('.ipynb')
+    file.isDirectory || file.name.endsWith(`.${expectedExt}`)
   );
 
   return (

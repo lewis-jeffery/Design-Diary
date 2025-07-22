@@ -437,15 +437,18 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
     // Clear any existing selection first
     get().clearSelection();
     
-    // Do NOT assign execution order when creating cells
-    // Execution order should only be assigned when cells are actually executed
+    // For code cells, assign the next sequential execution order
     let executionOrder: number | null = null;
+    if (type === 'code') {
+      const existingCodeCells = document.cells.filter(cell => cell.type === 'code');
+      executionOrder = existingCodeCells.length + 1; // Next sequential number
+    }
     
     const baseCell = {
       id: uuidv4(),
       position,
       size: { width: 300, height: 200 },
-      executionOrder, // Set based on logical design sequence for code cells
+      executionOrder,
       collapsed: false,
       collapsedSize: { width: 300, height: 50 },
       selected: true, // Create cell as selected
@@ -463,6 +466,7 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
           content: '# Enter your code here\nprint("Hello, World!")',
           language: 'python',
           firstCommentLines: ['# Enter your code here'],
+          executionCount: undefined, // Execution count is separate from sequence order
         };
         break;
       case 'markdown':
@@ -644,6 +648,13 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
     const { document } = get();
     const cellToDuplicate = document.cells.find(cell => cell.id === cellId);
     if (cellToDuplicate) {
+      // For code cells, assign the next sequential number immediately
+      let newExecutionOrder = cellToDuplicate.executionOrder;
+      if (cellToDuplicate.type === 'code') {
+        const existingCodeCells = document.cells.filter(cell => cell.type === 'code');
+        newExecutionOrder = existingCodeCells.length + 1; // Next sequential number
+      }
+      
       const duplicatedCell: Cell = {
         ...cellToDuplicate,
         id: uuidv4(),
@@ -651,7 +662,7 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
           x: cellToDuplicate.position.x + 20,
           y: cellToDuplicate.position.y + 20,
         },
-        executionOrder: cellToDuplicate.type === 'code' ? null : cellToDuplicate.executionOrder, // Code cells get renumbered, others keep their order
+        executionOrder: newExecutionOrder,
         selected: false,
       };
 
@@ -663,10 +674,7 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
         },
       });
       
-      // If we duplicated a code cell, renumber all code cells to maintain sequence
-      if (cellToDuplicate.type === 'code') {
-        setTimeout(() => get().renumberCodeCells(), 0);
-      }
+      // No need to call renumberCodeCells since we assigned the correct number immediately
     }
   },
 
@@ -922,7 +930,7 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
           type: 'raw',
           position,
           size,
-          executionOrder: null,
+          executionOrder: cell.executionOrder, // Match the source code cell's sequence number
           collapsed: false,
           collapsedSize: { width: 400, height: 50 },
           selected: false,
@@ -961,7 +969,7 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
               type: 'raw',
               position,
               size,
-              executionOrder: null,
+              executionOrder: cell.executionOrder, // Match the source code cell's sequence number
               collapsed: false,
               collapsedSize: { width: 400, height: 50 },
               selected: false,
@@ -1002,7 +1010,7 @@ export const useStore = create<AppState & StoreActions>((set, get) => {
           type: 'raw',
           position,
           size,
-          executionOrder: null,
+          executionOrder: cell.executionOrder, // Match the source code cell's sequence number
           collapsed: false,
           collapsedSize: { width: 300, height: 50 },
           selected: false,

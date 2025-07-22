@@ -27,7 +27,7 @@ export interface BaseCell {
   type: CellType;
   position: Position;
   size: Size;
-  executionOrder: number | null; // null for cells that haven't been executed yet
+  executionOrder: number | null; // Sequential cell number (1, 2, 3...) for code cells, null for non-code cells
   collapsed: boolean;
   collapsedSize: Size;
   selected: boolean;

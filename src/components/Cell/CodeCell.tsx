@@ -93,9 +93,9 @@ const CodeCell: React.FC<CodeCellProps> = ({ cell }) => {
 
   return (
     <CodeCellWrapper>
-      {cell.executionCount && (
+      {cell.executionOrder !== undefined && cell.executionOrder !== null && (
         <ExecutionNumber>
-          [{cell.executionCount}]
+          [{cell.executionOrder}]
         </ExecutionNumber>
       )}
       

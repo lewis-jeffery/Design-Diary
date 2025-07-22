@@ -840,6 +840,42 @@ app.post('/api/save-notebook', (req, res) => {
   }
 });
 
+// Save PDF to server filesystem
+app.post('/api/save-pdf', (req, res) => {
+  const { pdfPath, pdfData } = req.body;
+  
+  if (!pdfPath || !pdfData) {
+    return res.status(400).json({ error: 'Missing pdfPath or pdfData' });
+  }
+  
+  try {
+    // Ensure directory exists
+    const directory = path.dirname(pdfPath);
+    if (!fs.existsSync(directory)) {
+      fs.mkdirSync(directory, { recursive: true });
+    }
+    
+    // Convert base64 string back to binary data
+    const pdfBuffer = Buffer.from(pdfData, 'base64');
+    
+    // Write PDF file
+    fs.writeFileSync(pdfPath, pdfBuffer);
+    const pdfStats = fs.statSync(pdfPath);
+    
+    console.log(`Saved PDF: ${pdfPath} (${pdfStats.size} bytes)`);
+    
+    res.json({
+      success: true,
+      savedPath: pdfPath,
+      size: pdfStats.size,
+      modified: pdfStats.mtime
+    });
+    
+  } catch (error) {
+    res.status(500).json({ error: `Failed to save PDF: ${error.message}` });
+  }
+});
+
 // Register notebook working directory endpoint (legacy support)
 app.post('/api/register-working-directory', (req, res) => {
   const { documentId, workingDirectory } = req.body;

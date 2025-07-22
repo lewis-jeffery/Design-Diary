@@ -123,7 +123,9 @@ const QuitButton = styled(ToolbarButton)`
 const Toolbar: React.FC = () => {
   const [showDirectoryBrowser, setShowDirectoryBrowser] = useState(false);
   const [showSaveAsDialog, setShowSaveAsDialog] = useState(false);
+  const [showPdfSaveDialog, setShowPdfSaveDialog] = useState(false);
   const [currentWorkingDirectory, setCurrentWorkingDirectory] = useState('/Users/lewis/opt/design-diary');
+  const [pendingPdfBlob, setPendingPdfBlob] = useState<Blob | null>(null);
   
   const {
     document: designDocument,
@@ -437,6 +439,64 @@ const Toolbar: React.FC = () => {
     }
   }, [exportToJupyter, setSavedFileInfo]);
 
+  const handlePdfSaveSelected = useCallback(async (filePath: string) => {
+    console.log('PDF file path selected for save:', filePath);
+    
+    if (!pendingPdfBlob) {
+      alert('No PDF data available. Please try generating the PDF again.');
+      return;
+    }
+    
+    try {
+      // Convert the PDF blob to a base64 string for server transmission
+      // Use a more efficient method that doesn't cause stack overflow
+      const arrayBuffer = await pendingPdfBlob.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      
+      // Convert to base64 in chunks to avoid stack overflow
+      let base64String = '';
+      const chunkSize = 8192; // Process in 8KB chunks
+      
+      for (let i = 0; i < uint8Array.length; i += chunkSize) {
+        const chunk = uint8Array.slice(i, i + chunkSize);
+        const chunkArray = Array.from(chunk);
+        const chunkString = String.fromCharCode.apply(null, chunkArray);
+        base64String += btoa(chunkString);
+      }
+      
+      // Call server to save the PDF file
+      const response = await fetch('http://localhost:3001/api/save-pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          pdfPath: filePath,
+          pdfData: base64String
+        }),
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to save PDF');
+      }
+      
+      const result = await response.json();
+      console.log('PDF save result:', result);
+      
+      // Clear the pending PDF blob
+      setPendingPdfBlob(null);
+      
+      // Show success message
+      const fileName = filePath.split('/').pop() || 'document.pdf';
+      alert(`PDF successfully saved as:\n${result.savedPath}`);
+      
+    } catch (error) {
+      console.error('PDF save error:', error);
+      alert(`PDF save failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }, [pendingPdfBlob]);
+
   const handleExportToPDF = useCallback(async () => {
     if (designDocument.cells.length === 0) {
       alert('No content to export. Please add some cells first.');
@@ -515,39 +575,23 @@ const Toolbar: React.FC = () => {
       // Clean up loading message
       document.body.removeChild(loadingMessage);
 
-      // Download PDF
-      const fileName = designDocument.name.replace(/\s+/g, '_');
-      PDFGenerationService.downloadPDF(pdfBlob, `${fileName}.pdf`);
+      // Store the PDF blob and open the save dialog
+      setPendingPdfBlob(pdfBlob);
+      
+      // Get the current working directory for the PDF save location
+      try {
+        const workingDir = await getCurrentWorkingDirectory();
+        setCurrentWorkingDirectory(workingDir);
+        console.log('Using working directory for PDF save dialog:', workingDir);
+      } catch (error) {
+        console.warn('Failed to get current working directory for PDF, using default:', error);
+        setCurrentWorkingDirectory('/Users/lewis/opt/design-diary');
+      }
+      
+      // Open the PDF save dialog
+      setShowPdfSaveDialog(true);
 
-      // Show success message
-      const successMessage = document.createElement('div');
-      successMessage.style.cssText = `
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: white;
-        border: 2px solid #28a745;
-        border-radius: 8px;
-        padding: 20px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        z-index: 10000;
-        text-align: center;
-        font-family: Arial, sans-serif;
-      `;
-      successMessage.innerHTML = `
-        <h3 style="margin: 0 0 10px 0; color: #28a745;">✅ PDF Generated Successfully</h3>
-        <p style="margin: 0; color: #495057;">Downloaded as: ${fileName}.pdf</p>
-        <p style="margin: 10px 0 0 0; font-size: 12px; color: #6c757d;">Target size: ${targetPageName.toUpperCase()}</p>
-      `;
-      document.body.appendChild(successMessage);
-
-      // Auto-hide success message
-      setTimeout(() => {
-        if (document.body.contains(successMessage)) {
-          document.body.removeChild(successMessage);
-        }
-      }, 3000);
+      // Success message will be shown after PDF is saved via dialog
 
     } catch (error) {
       console.error('PDF generation error:', error);
@@ -779,6 +823,19 @@ const Toolbar: React.FC = () => {
         defaultFilename={savedFileInfo.baseFileName ? `${savedFileInfo.baseFileName}.ipynb` : 'notebook.ipynb'}
         defaultDirectory={currentWorkingDirectory}
         title="Save Notebook As..."
+      />
+
+      <SaveAsDialog
+        isOpen={showPdfSaveDialog}
+        onClose={() => {
+          setShowPdfSaveDialog(false);
+          setPendingPdfBlob(null); // Clear pending PDF if user cancels
+        }}
+        onSave={handlePdfSaveSelected}
+        defaultFilename={`${(designDocument.name || 'Untitled_Design_Diary').replace(/\s+/g, '_')}.pdf`}
+        defaultDirectory={currentWorkingDirectory}
+        title="Save PDF As..."
+        fileExtension="pdf"
       />
     </>
   );

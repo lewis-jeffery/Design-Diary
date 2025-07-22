@@ -14,30 +14,55 @@ This document tracks known issues, their status, and verification results to mai
 
 ## 🔥 Critical Issues (Blocking Core Functionality)
 
-### 2. Output Cell Position Preservation
-- **Status**: 🔄 **PARTIALLY FIXED**: Works for code cell 1, broken for cells 2+
-- **Description**: Output cells change positions when code cells are re-executed, but fix only works for first code cell
-- **Current Behavior**:
-  - ✅ **Code Cell 1**: Output cell position preservation works correctly, outputs overwrite in place
-  - ❌ **Code Cells 2+**: Position preservation fails completely
-  - ❌ **Missing Execution Order**: Code cells 2+ have no blue execution order dot on their output cells after import
-  - ❌ **New Cell Generation**: Instead of reusing existing output cells, new output cells are generated on each execution
-- **Impact**: 
-  - Layout becomes unpredictable for multi-cell notebooks
-  - Output cells multiply and jump around for cells 2 and above
-  - Execution order tracking is broken for imported notebooks with multiple cells
-- **Root Cause**: Array indexing logic in position reuse only works correctly for the first cell (index 0)
-- **Last Attempted Fix**: 2025-07-22 - Simplified position reuse logic using array indexing (incomplete fix)
-- **Verification Results**: 2025-07-22 - User confirmed works for cell 1, fails for cells 2+
-- **Next Steps**: 
-  - Debug why array indexing fails for cells beyond index 0
-  - Fix execution order assignment for imported output cells
-  - Ensure output cell reuse works for all code cells, not just the first
-- **Priority**: 🔥 **CRITICAL** - Basic functionality must work before adding features like PDF export
+*(No critical issues currently blocking core functionality)*
 
 ---
 
 ## ⚠️ High Priority Issues
+
+### 3. Code Cell Insertion Execution Order
+- **Status**: 🆕 **NEW**: Execution order not properly managed on cell insertion
+- **Description**: When a new code cell is inserted between existing cells, execution order numbering is incorrect
+- **Current Behavior**: 
+  - New cell inserted before cell 4 gets execution order at end of document (e.g., becomes cell 6)
+  - Existing cells after insertion point keep their original execution order
+  - No renumbering of subsequent cells occurs
+- **Expected Behavior**: 
+  - New cell inserted before cell 4 should become new cell 4
+  - All cells after insertion point should increment their execution order by 1
+  - Maintains logical sequence: 1, 2, 3, [new 4], [old 4→5], [old 5→6], etc.
+- **Impact**: 
+  - Execution order doesn't reflect logical document flow
+  - Confusing for users trying to understand cell sequence
+  - Breaks expected notebook behavior from JupyterLab
+- **Root Cause**: Cell insertion logic assigns next available number instead of inserting at logical position
+- **Priority**: HIGH - Important for logical document organization
+- **Next Steps**: 
+  - Modify addCell logic to determine insertion position based on selected cell
+  - Implement renumbering of subsequent cells when inserting between existing cells
+  - Ensure execution order reflects visual/logical document flow
+
+### 4. Output Cell Execution Order Display on Import
+- **Status**: 🆕 **NEW**: Output cells don't show execution order numbers until after execution
+- **Description**: On import, code cells display execution order correctly, but output cells don't show matching numbers
+- **Current Behavior**: 
+  - Code cells show execution order numbers immediately on import (1, 2, 3, etc.)
+  - Output cells only show execution order numbers after code cell is re-executed
+  - Creates disconnect between code cells and their associated outputs
+- **Expected Behavior**: 
+  - Output cells should display matching execution order numbers on import
+  - Should help users understand document design and cell relationships
+  - Visual consistency between code cells and their outputs
+- **Impact**: 
+  - Users can't easily identify which outputs belong to which code cells
+  - Reduces document readability and understanding
+  - Inconsistent with JupyterLab behavior where outputs are clearly linked
+- **Root Cause**: Output cells don't inherit execution order display from import process
+- **Priority**: HIGH - Important for document comprehension and usability
+- **Next Steps**: 
+  - Ensure output cells display execution order numbers on import
+  - Verify execution order is properly preserved in import/export cycle
+  - Test with various notebook formats and output types
 
 ### 6. PDF Generation System Failure
 - **Status**: 🔥 **CRITICAL**: Blocking core functionality
@@ -204,35 +229,28 @@ This document tracks known issues, their status, and verification results to mai
 
 ## ✅ Resolved Issues
 
-*(Issues will be moved here after verification)*
 ### 1. Code Cell Execution Numbering
 - **Status**: ✅ **FIXED**: Verified working by user
 - **Description**: Code cells show duplicate execution numbers (e.g., both showing "2")
 - **Impact**: Confusing execution sequence, hard to track cell execution order
 - **Last Attempted Fix**: 2025-07-22 - Changed display from `executionOrder` to `executionCount`
-- **Verification Needed**: Test creating and executing multiple code cells
-- **Priority**: HIGH
+- **Verification Results**: 2025-07-22 - User confirmed working correctly
+- **Priority**: RESOLVED
 
 ### 2. Output Cell Position Preservation
-- **Status**: 🔄 **PARTIALLY FIXED**: Works for code cell 1, broken for cells 2+
-- **Description**: Output cells change positions when code cells are re-executed, but fix only works for first code cell
-- **Current Behavior**:
-  - ✅ **Code Cell 1**: Output cell position preservation works correctly, outputs overwrite in place
-  - ❌ **Code Cells 2+**: Position preservation fails completely
-  - ❌ **Missing Execution Order**: Code cells 2+ have no blue execution order dot on their output cells after import
-  - ❌ **New Cell Generation**: Instead of reusing existing output cells, new output cells are generated on each execution
-- **Impact**: 
-  - Layout becomes unpredictable for multi-cell notebooks
-  - Output cells multiply and jump around for cells 2 and above
-  - Execution order tracking is broken for imported notebooks with multiple cells
-- **Root Cause**: Array indexing logic in position reuse only works correctly for the first cell (index 0)
-- **Last Attempted Fix**: 2025-07-22 - Simplified position reuse logic using array indexing (incomplete fix)
-- **Verification Results**: 2025-07-22 - User confirmed works for cell 1, fails for cells 2+
-- **Next Steps**: 
-  - Debug why array indexing fails for cells beyond index 0
-  - Fix execution order assignment for imported output cells
-  - Ensure output cell reuse works for all code cells, not just the first
-- **Priority**: HIGH - Critical for multi-cell notebook functionality
+- **Status**: ✅ **FIXED**: Verified working by user for all code cells
+- **Description**: Output cells change positions when code cells are re-executed
+- **Original Problem**:
+  - Output cells would jump around and multiply on re-execution
+  - Position preservation only worked for first code cell
+  - Layout became unpredictable for multi-cell notebooks
+- **Solution Implemented**: 2025-07-23 - Complete rewrite of position preservation logic
+  - Smart position matching by output type (text, error, image, success)
+  - Consistent ordering via Y-position sorting of existing output cells
+  - Robust fallback logic when saved positions are exhausted
+  - Enhanced debugging and error handling
+- **Verification Results**: 2025-07-23 - User confirmed position preservation now works for all code cells
+- **Priority**: RESOLVED
 
 ### 4. Import Dialog Path Display
 - **Status**: ✅ **FIXED**: Verified working by user
